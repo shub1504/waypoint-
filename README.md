@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Waypoint: Autonomous Travel Disruption Concierge (prototype)
 
 A cancelled flight or train arrives as a live event. The agent finds alternatives, checks them
