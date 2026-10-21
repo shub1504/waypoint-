@@ -64,5 +64,4 @@ Flight, train and hotel inventory is a mock dataset (`backend/app/inventory.py`)
 flight APIs were not usable. `search_transport` and `search_hotels` are the only two functions to
 replace when you get a real supplier API.
 =======
-# waypoint-
->>>>>>> ba050380bcd2a8138678ab6056d2ca1d18fcff05
+
