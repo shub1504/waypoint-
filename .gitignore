@@ -1,0 +1,30 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+tableau/exports/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Environment and secrets
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Build outputs and caches
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+build/
+.next/
+
+# Local editor and OS files
+.vscode/
+.DS_Store
