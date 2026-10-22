@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { initials, inr } from "./api.js";
+import { inr } from "./api.js";
 import { useLive } from "./live.js";
 import { useMedia } from "./useMedia.js";
 import { UI } from "./ui.js";
@@ -9,6 +9,8 @@ import Explore from "./components/Explore.jsx";
 import Chat from "./components/Chat.jsx";
 import Profile from "./components/Profile.jsx";
 import DemoPanel from "./components/DemoPanel.jsx";
+import Avatar from "./components/Avatar.jsx";
+import Logo from "./components/Logo.jsx";
 import AddAccount from "./components/AddAccount.jsx";
 import { TripSheet } from "./components/TripCard.jsx";
 
@@ -81,7 +83,7 @@ export default function App() {
           {data.members.map((m) => (
             <li key={m.id}>
               <button onClick={() => { setMemberId(m.id); setSheet(null); }} aria-current={m.id === memberId}>
-                <span className="avatar">{initials(m.name)}</span>
+                <Avatar m={m} />
                 <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
                 {m.id === memberId && <Icon name="check" size={18} />}
               </button>
@@ -118,10 +120,10 @@ export default function App() {
       <div className={"app " + (desktop ? "desk" : "mob")}>
         {desktop && (
           <aside className="side" aria-label="Main">
-            <div className="brandmark"><span className="logo">W</span><b>Waypoint</b></div>
+            <div className="brandmark"><Logo size={30} /><b>Waypoint</b></div>
             {TABS.map((t) => (
               <button key={t.id} className={"nav " + (tab === t.id ? "on" : "")} onClick={() => go(t.id)} aria-label={t.label} aria-current={tab === t.id ? "page" : undefined}>
-                {t.id === "profile" && me ? <span className="avatar xs">{initials(me.name)}</span> : <Icon name={t.icon} size={26} />}
+                {t.id === "profile" && me ? <Avatar m={me} cls="xs" /> : <Icon name={t.icon} size={26} />}
                 <span className="lbl">{t.label}</span>
                 {unread[t.id] > 0 && <i className="badge">{unread[t.id]}</i>}
               </button>
@@ -137,10 +139,10 @@ export default function App() {
         <div className="main">
           {!desktop && (
             <header className="topbar">
-              <div className="brandmark"><span className="logo">W</span><b>Waypoint</b></div>
+              <div className="brandmark"><Logo size={30} /><b>Waypoint</b></div>
               <div className="tools">
                 <button className="icon flask" onClick={openDemo} aria-label="Demo controls"><Icon name="flask" size={22} /></button>
-                <button className="avatar sm" onClick={openAccounts} aria-label={`Account: ${me ? me.name : ""}. Switch account`}>{me ? initials(me.name) : "?"}</button>
+                <Avatar tag="button" m={me} cls="sm" onClick={openAccounts} aria-label={`Account: ${me ? me.name : ""}. Switch account`} />
               </div>
             </header>
           )}
@@ -158,7 +160,7 @@ export default function App() {
             <nav className="tabbar" aria-label="Main">
               {TABS.map((t) => (
                 <button key={t.id} className={tab === t.id ? "on" : ""} onClick={() => go(t.id)} aria-label={t.label} aria-current={tab === t.id ? "page" : undefined}>
-                  {t.id === "profile" && me ? <span className="avatar xs">{initials(me.name)}</span> : <Icon name={t.icon} size={26} fill={false} />}
+                  {t.id === "profile" && me ? <Avatar m={me} cls="xs" /> : <Icon name={t.icon} size={26} fill={false} />}
                   <small>{t.label}</small>
                   {unread[t.id] > 0 && <i className="badge">{unread[t.id]}</i>}
                 </button>
@@ -171,7 +173,7 @@ export default function App() {
           <aside className="rail" aria-label="Account and demo">
             {me && (
               <div className="racct">
-                <span className="avatar lg">{initials(me.name)}</span>
+                <Avatar m={me} cls="lg" />
                 <div><b>{me.name}</b><small>{me.email}</small></div>
                 <button className="link" onClick={openAccounts}>Switch</button>
               </div>
@@ -182,13 +184,14 @@ export default function App() {
               <button key={t.id} className="rrow" onClick={() => openSheet(t.title, <TripSheet trip={t} />)}>
                 <span className="avatar"><Icon name={t.bookings.some((b) => b.kind === "TRAIN") ? "train" : "plane"} size={20} /></span>
                 <span><b>{t.title}</b><small>{inr(t.spent)} of {inr(t.envelope)}</small></span>
+                <span className="go"><Icon name="arrow" size={18} /></span>
               </button>
             ))}
 
             {others.length > 0 && <h4 className="rh">Other travellers</h4>}
             {others.map((m) => (
               <div key={m.id} className="rrow static">
-                <span className="avatar">{initials(m.name)}</span>
+                <Avatar m={m} />
                 <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
                 <button className="link" onClick={() => setMemberId(m.id)}>Switch</button>
               </div>

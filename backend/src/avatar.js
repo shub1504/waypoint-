@@ -2,8 +2,8 @@ import { useSyncExternalStore } from "react";
 
 // A member's own picture (and colour choice) lives in this browser. It is resized to a small square first.
 export const GRADS = [
-  "linear-gradient(135deg,#006fcf,#00a88f)", "linear-gradient(135deg,#7c3aed,#ec4899)", "linear-gradient(135deg,#f59e0b,#ef4444)",
-  "linear-gradient(135deg,#0ea5e9,#6366f1)", "linear-gradient(135deg,#10b981,#84cc16)", "linear-gradient(135deg,#334155,#64748b)",
+  "linear-gradient(135deg,#d8294f,#ff7a93)", "linear-gradient(135deg,#141111,#4a3f3f)", "linear-gradient(135deg,#f59e0b,#ef4444)",
+  "linear-gradient(135deg,#7c3aed,#d8294f)", "linear-gradient(135deg,#8b8381,#c9bfbc)", "linear-gradient(135deg,#be123c,#7f1d1d)",
 ];
 const subs = new Set();
 const key = (kind, id) => `wp_${kind}_${id}`;

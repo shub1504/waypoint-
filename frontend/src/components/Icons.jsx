@@ -23,6 +23,9 @@ const P = {
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   swap: <path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" />,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
+  chart: <path d="M5 20V11M12 20V4M19 20v-6" />,
+  arrow: <path d="M7 17 17 7M8 7h9v9" />,
 };
 
 export function Icon({ name, size = 22, fill = false }) {

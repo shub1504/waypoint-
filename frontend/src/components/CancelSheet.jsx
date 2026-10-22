@@ -11,12 +11,13 @@ export default function CancelSheet({ trip, booking }) {
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
   const body = { trip_id: trip.id, booking_id: booking ? booking.id : null, reason };
+  const needsWords = reason === "other" && !note.trim();
 
   useEffect(() => { get("/api/cancel/reasons").then(setReasons).catch(() => {}); }, []);
   useEffect(() => {
     if (!reason) { setPlan(null); return; }
     let live = true;
-    post("/api/cancel/preview", body).then((p) => live && setPlan(p)).catch((e) => live && setPlan({ ok: false, message: e.message }));
+    post("/api/cancel/preview", { ...body, note: note || "x" }).then((p) => live && setPlan(p)).catch((e) => live && setPlan({ ok: false, message: e.message }));
     return () => { live = false; };
   }, [reason]); // eslint-disable-line
 
@@ -42,7 +43,9 @@ export default function CancelSheet({ trip, booking }) {
 
       {reason && (
         <>
-          <input className="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note (optional)" aria-label="Note" />
+          <input className="text" value={note} maxLength={140} onChange={(e) => setNote(e.target.value)}
+            placeholder={reason === "other" ? "Tell us in a few words why (required)" : "Add a note (optional)"} aria-label="Reason in your words" autoFocus={reason === "other"} />
+          {reason === "other" && <small className="muted">Short is fine, for example: "boss moved the meeting". Waypoint remembers it.</small>}
           {plan && (
             <div className={"plan " + (plan.ok ? "" : "bad")}>
               <b>{plan.ok ? "What will happen" : "Not possible"}</b>
@@ -56,7 +59,7 @@ export default function CancelSheet({ trip, booking }) {
               )}
             </div>
           )}
-          <button className="btn primary" disabled={busy || !plan || !plan.ok} onClick={confirm}>
+          <button className="btn primary" disabled={busy || !plan || !plan.ok || needsWords} onClick={confirm}>
             {reason === "better_option" ? "Swap to the cheaper option" : booking ? "Cancel this booking" : "Cancel the whole trip"}
           </button>
         </>

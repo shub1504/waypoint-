@@ -184,6 +184,7 @@ export default function App() {
               <button key={t.id} className="rrow" onClick={() => openSheet(t.title, <TripSheet trip={t} />)}>
                 <span className="avatar"><Icon name={t.bookings.some((b) => b.kind === "TRAIN") ? "train" : "plane"} size={20} /></span>
                 <span><b>{t.title}</b><small>{inr(t.spent)} of {inr(t.envelope)}</small></span>
+                <span className="go"><Icon name="arrow" size={18} /></span>
               </button>
             ))}
 

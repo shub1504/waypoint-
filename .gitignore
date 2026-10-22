@@ -28,3 +28,14 @@ build/
 # Local editor and OS files
 .vscode/
 .DS_Store
+
+# Local dependencies and environment
+node_modules/
+frontend/node_modules/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+dist/
+frontend/dist/

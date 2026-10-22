@@ -14,7 +14,7 @@ export function TripSheet({ trip }) {
       <ul className="blist">
         {trip.bookings.map((b) => (
           <li key={b.id} className={b.status === "REBOOKED" ? "old" : ""}>
-            <Icon name={KIND_ICON[b.kind] || "plane"} size={18} /><span>{b.label}</span><b>{inr(b.amount)}</b>
+            <Icon name={KIND_ICON[b.kind] || "plane"} size={18} /><span>{b.label}{b.status === "ACTIVE" && b.auto_limit != null && <small className="lim" style={{ display: "block" }}>Auto limit {inr(b.auto_limit)} ({inr(b.baseline_amount)} × {b.multiplier})</small>}</span><b>{inr(b.amount)}</b>
           </li>
         ))}
       </ul>

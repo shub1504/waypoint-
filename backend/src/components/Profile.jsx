@@ -41,26 +41,26 @@ export default function Profile() {
   const permsOn = [me.consent_autorebook, me.consent_history].filter(Boolean).length;
 
   const tiles = [
-    { id: "new", icon: "grid", label: "New", dot: rebooked, tint: "#006fcf" },
+    { id: "new", icon: "grid", label: "New", dot: rebooked, tint: "#1a1d1b" },
     { id: "old", icon: "archive", label: "Old", dot: 0, tint: "#8f5600" },
-    { id: "past", icon: "clock", label: "Past trips", dot: 0, tint: "#0a7a45" },
+    { id: "past", icon: "clock", label: "Past trips", dot: 0, tint: "#d8294f" },
     { id: "alerts", icon: "chat", label: "Alerts", dot: pending, tint: "#b3261e" },
   ];
   const myTrips = ui.trips.filter((t) => t.member.id === me.id);
   const groups = [
     [
-      { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#006fcf" },
-      { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#00a88f" },
+      { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#1a1d1b" },
+      { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#d8294f" },
     ],
     [
-      { id: "edit", icon: "user", label: "Edit profile", value: me.name.split(" ")[0], tint: "#006fcf" },
-      { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#0a7a45" },
-      { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#7c3aed" },
+      { id: "edit", icon: "user", label: "Edit profile", value: me.name.split(" ")[0], tint: "#1a1d1b" },
+      { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#d8294f" },
+      { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#1a1d1b" },
       { id: "perms", icon: "sliders", label: "Permissions", value: `${permsOn} of 2 on`, tint: "#8f5600" },
     ],
     [
-      { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#0ea5e9" },
-      { id: "help", icon: "info", label: "Ask Waypoint", value: "Chat", tint: "#00a88f" },
+      { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#1a1d1b" },
+      { id: "help", icon: "info", label: "Ask Waypoint", value: "Chat", tint: "#d8294f" },
     ],
   ];
 

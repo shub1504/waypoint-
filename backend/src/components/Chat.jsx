@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { STATUS, get, inr, post } from "../api.js";
+import { KIND_ICON, STATUS, ago, get, inr, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
 
@@ -26,7 +26,7 @@ export default function Chat() {
     return [hello, ...own.map((m) => ({ kind: "text", ...m })), ...decisions].sort((a, b) => a.t - b.t);
   }, [typed, ui.decisions, ui.memberId, me]);
 
-  useEffect(() => { end.current && end.current.scrollIntoView({ block: "end" }); }, [thread.length, busy]);
+  useEffect(() => { end.current && end.current.scrollIntoView({ block: "end", behavior: "smooth" }); }, [thread.length, busy]);
 
   const add = (m) => setTyped((s) => ({ ...s, [ui.memberId]: [...(s[ui.memberId] || []), { ...m, t: Date.now() }] }));
 
@@ -56,8 +56,12 @@ export default function Chat() {
         {thread.map((m, i) =>
           m.kind === "decision" ? <DecisionBubble key={"d" + m.d.id} d={m.d} /> : (
             <div key={i} className={"bubble " + m.from}>
-              {m.text.split("\n").map((l, j) => <p key={j}>{l}</p>)}
-              {(m.actions || []).map((a, k) => <ActionCard key={k} a={a} />)}
+              {m.from === "bot" && <span className="bic">W</span>}
+              <div className="bbody">
+                <div className="bhead"><b>{m.from === "bot" ? "Waypoint" : "You"}</b>{m.t > 0 && <small>{ago(new Date(m.t).toISOString())}</small>}</div>
+                {m.text.split("\n").map((l, j) => <p key={j}>{l}</p>)}
+                {(m.actions || []).map((a, k) => <ActionCard key={k} a={a} />)}
+              </div>
             </div>
           )
         )}
@@ -82,7 +86,9 @@ function DecisionBubble({ d }) {
   const act = (p) => post(p).catch((e) => ui.toast(e.message));
   return (
     <div className="bubble bot alert">
-      <small className={"tagline " + st.tone}>{st.label}</small>
+      <span className="bic"><Icon name={KIND_ICON[d.kind] || "plane"} size={18} /></span>
+      <div className="bbody">
+      <div className="bhead"><b className={"tl " + st.tone}>{st.label}</b><small>{ago(d.created_at)}</small></div>
       <p>{d.notification}</p>
       {d.status === "NEEDS_APPROVAL" && (
         <div className="cta">
@@ -99,6 +105,7 @@ function DecisionBubble({ d }) {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

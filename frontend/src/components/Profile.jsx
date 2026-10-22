@@ -5,6 +5,8 @@ import { Icon } from "./Icons.jsx";
 import Matrix, { pairCols, pairRows } from "./Matrix.jsx";
 import NewTrip from "./NewTrip.jsx";
 import CancelSheet from "./CancelSheet.jsx";
+import Avatar from "./Avatar.jsx";
+import { GRADS, fileToAvatar, setColour, setPhoto, useAvatarLook } from "../avatar.js";
 
 const MULT = { low: 1.3, medium: 1.6, high: 2.0 };
 const LEVEL_FILL = { low: 34, medium: 67, high: 100 };
@@ -21,54 +23,44 @@ const TITLES = {
   edit: "Edit profile", budget: "Budget comfort", channel: "Alerts via", perms: "Permissions",
 };
 
-const GRADS = [
-  "linear-gradient(135deg,#006fcf,#00a88f)", "linear-gradient(135deg,#7c3aed,#ec4899)", "linear-gradient(135deg,#f59e0b,#ef4444)",
-  "linear-gradient(135deg,#0ea5e9,#6366f1)", "linear-gradient(135deg,#10b981,#84cc16)", "linear-gradient(135deg,#334155,#64748b)",
-];
-const avKey = (id) => "wp_av_" + id;
-function readAv(id) { try { return Number(localStorage.getItem(avKey(id))) || 0; } catch { return 0; } }
-
 export default function Profile() {
   const ui = useUI();
   const me = ui.members.find((m) => m.id === ui.memberId);
   const [page, setPage] = useState(null); // null = the "Me" menu (phone). On a laptop the right pane always shows one.
   const [data, setData] = useState({ new: [], old: [], past_stays: [] });
-  const [av, setAv] = useState(0);
 
   useEffect(() => {
     if (!ui.memberId) return;
     get(`/api/members/${ui.memberId}/bookings`).then(setData).catch(() => {});
   }, [ui.memberId, ui.trips]);
-  useEffect(() => { if (ui.memberId) setAv(readAv(ui.memberId)); }, [ui.memberId]);
 
   if (!me) return null;
   const rebooked = data.new.filter((b) => b.original).length;
   const pending = ui.decisions.filter((d) => d.member_id === me.id && ["NEEDS_APPROVAL", "FALLBACK_OPTIONS"].includes(d.status)).length;
   const cur = ui.desktop ? page || "new" : page;
   const permsOn = [me.consent_autorebook, me.consent_history].filter(Boolean).length;
-  const pickAv = (i) => { setAv(i); try { localStorage.setItem(avKey(me.id), String(i)); } catch { /* fine */ } };
 
   const tiles = [
-    { id: "new", icon: "grid", label: "New", dot: rebooked, tint: "#006fcf" },
+    { id: "new", icon: "grid", label: "New", dot: rebooked, tint: "#1a1d1b" },
     { id: "old", icon: "archive", label: "Old", dot: 0, tint: "#8f5600" },
-    { id: "past", icon: "clock", label: "Past trips", dot: 0, tint: "#0a7a45" },
+    { id: "past", icon: "clock", label: "Past trips", dot: 0, tint: "#d8294f" },
     { id: "alerts", icon: "chat", label: "Alerts", dot: pending, tint: "#b3261e" },
   ];
   const myTrips = ui.trips.filter((t) => t.member.id === me.id);
   const groups = [
     [
-      { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#006fcf" },
-      { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#00a88f" },
+      { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#1a1d1b" },
+      { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#d8294f" },
     ],
     [
-      { id: "edit", icon: "user", label: "Edit profile", value: me.name.split(" ")[0], tint: "#006fcf" },
-      { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#0a7a45" },
-      { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#7c3aed" },
+      { id: "edit", icon: "user", label: "Edit profile", value: me.name.split(" ")[0], tint: "#1a1d1b" },
+      { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#d8294f" },
+      { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#1a1d1b" },
       { id: "perms", icon: "sliders", label: "Permissions", value: `${permsOn} of 2 on`, tint: "#8f5600" },
     ],
     [
-      { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#0ea5e9" },
-      { id: "help", icon: "info", label: "Ask Waypoint", value: "Chat", tint: "#00a88f" },
+      { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#1a1d1b" },
+      { id: "help", icon: "info", label: "Ask Waypoint", value: "Chat", tint: "#d8294f" },
     ],
   ];
 
@@ -81,7 +73,7 @@ export default function Profile() {
   const menu = (
     <div className="pmenu">
       <button className="mehead" onClick={() => open("edit")} aria-label="Edit profile">
-        <span className="avatar sq" style={{ background: GRADS[av] }}>{initials(me.name)}</span>
+        <Avatar m={me} cls="sq" />
         <span className="who2">
           <b>{me.name}</b>
           <span className="level" title={LEVELS[me.budget_level]}>
@@ -132,7 +124,7 @@ export default function Profile() {
       {cur === "past" && <Past stays={data.past_stays} />}
       {cur === "newtrip" && <NewTrip onDone={() => setPage("trips")} />}
       {cur === "trips" && <MyTrips trips={myTrips} />}
-      {cur === "edit" && <EditProfile me={me} av={av} pickAv={pickAv} />}
+      {cur === "edit" && <EditProfile me={me} />}
       {cur === "budget" && <BudgetPage me={me} />}
       {cur === "channel" && <ChannelPage me={me} />}
       {cur === "perms" && <PermsPage me={me} />}
@@ -178,6 +170,7 @@ function Bookings({ items, kind }) {
               {kind === "old" && b.replaced_by && <small>Replaced by {b.replaced_by.label} ({inr(b.replaced_by.amount)})</small>}
               {kind === "old" && b.cancelled && <small className="up">Cancelled: {b.cancelled.reason}{b.cancelled.note ? ` (${b.cancelled.note})` : ""} · refund {inr(b.cancelled.refund)}</small>}
               {kind === "new" && b.original && <small className="up">Rebooked from {b.original.label} ({inr(b.original.amount)})</small>}
+              {kind === "new" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} · {inr(b.baseline_amount)} × {b.multiplier}{b.pool_credit > 0 ? ` + ${inr(b.pool_credit)} pool` : ""}</small>}
               {b.decision && <small>Decided by {b.decision.by}{b.decision.latency_ms ? ` in ${b.decision.latency_ms} ms` : ""}</small>}
             </div>
             <div className="bright">
@@ -307,15 +300,34 @@ function ChoiceSheet({ field, label, options }) {
   return <div className="prefs"><Seg label={label} value={me[field]} options={options} onChange={(v) => save({ [field]: v })} /></div>;
 }
 
-function AvatarSheet({ av, pickAv, name }) {
-  const [cur, setCur] = useState(av);
+function AvatarSheet({ m }) {
+  const ui = useUI();
+  const look = useAvatarLook(m.id);
+  const onFile = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try { setPhoto(m.id, await fileToAvatar(f)); ui.toast("Photo updated"); } catch (err) { ui.toast(err.message); }
+  };
   return (
     <div className="avpick">
-      {GRADS.map((g, i) => (
-        <button key={i} className={cur === i ? "on" : ""} aria-label={`Colour ${i + 1}`} onClick={() => { setCur(i); pickAv(i); }}>
-          <span className="avatar sq" style={{ background: g }}>{initials(name)}</span>
-        </button>
-      ))}
+      <div className="avnow"><Avatar m={m} cls="xl" /></div>
+      <div className="avbtns">
+        <label className="btn primary">
+          Upload a photo
+          <input type="file" accept="image/*" onChange={onFile} hidden />
+        </label>
+        {look.photo && <button className="btn" onClick={() => setPhoto(m.id, null)}>Remove photo</button>}
+      </div>
+      <p className="sub">Or pick a colour for your initials. Your photo stays on this device.</p>
+      <div className="avgrid">
+        {GRADS.map((g, i) => (
+          <button key={i} className={!look.photo && look.colour === i ? "on" : ""} aria-label={`Colour ${i + 1}`}
+            onClick={() => { setPhoto(m.id, null); setColour(m.id, i); }}>
+            <span className="avatar sq" style={{ background: g, color: "#fff", border: 0 }}>{initials(m.name)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -323,7 +335,7 @@ function AvatarSheet({ av, pickAv, name }) {
 function ContactCard({ me }) {
   return (
     <div className="ccard">
-      <span className="avatar xl">{initials(me.name)}</span>
+      <Avatar m={me} cls="xl" />
       <b>{me.name}</b>
       <span>{me.email}</span>
       <span>{me.phone}</span>
@@ -332,15 +344,15 @@ function ContactCard({ me }) {
   );
 }
 
-function EditProfile({ me, av, pickAv }) {
+function EditProfile({ me }) {
   const ui = useUI();
   const save = useSave(me);
   const sheet = (title, node) => ui.openSheet(title, node);
   return (
     <div className="elist">
       <div className="mgroup">
-        <Row label="Avatar" value={<span className="avatar sm" style={{ background: GRADS[av], color: "#fff", border: 0 }}>{initials(me.name)}</span>}
-          onClick={() => sheet("Choose a colour", <AvatarSheet av={av} pickAv={pickAv} name={me.name} />)} />
+        <Row label="Avatar" value={<Avatar m={me} cls="sm" />}
+          onClick={() => sheet("Profile picture", <AvatarSheet m={me} />)} />
         <Row label="Name" value={me.name} onClick={() => sheet("Name", <TextSheet field="name" label="Name" />)} />
         <Row label="Member ID" value={me.id} plain />
         <Row label="Contact card" value={<Icon name="grid" size={20} />} onClick={() => sheet("Contact card", <ContactCard me={me} />)} />
@@ -380,7 +392,7 @@ function MyTrips({ trips }) {
               {t.bookings.map((b) => (
                 <li key={b.id} className={b.status !== "ACTIVE" ? "old" : ""}>
                   <Icon name={KIND_ICON[b.kind] || "plane"} size={18} />
-                  <span>{b.label}<small>{BSTATUS[b.status] || b.status}</small></span>
+                  <span>{b.label}<small>{BSTATUS[b.status] || b.status}</small>{b.status === "ACTIVE" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} ({inr(b.baseline_amount)} × {b.multiplier})</small>}</span>
                   {b.status === "ACTIVE"
                     ? <span className="bact"><b>{inr(b.amount)}</b><button className="link warnlink" onClick={() => ui.openSheet("Cancel booking", <CancelSheet trip={t} booking={b} />)}>Cancel</button></span>
                     : <b>{inr(b.amount)}</b>}
