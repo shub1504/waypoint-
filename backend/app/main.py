@@ -1,4 +1,4 @@
-"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
+﻿"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
 import asyncio
 import json
 import logging
@@ -15,6 +15,7 @@ from app.db import engine, init_db, session_scope
 from app.models import Booking, Decision, Member, Trip
 from app.scenarios import SCENARIOS, build_booking_event, build_event
 from app.seed import create_member, seed
+from app.otp_testing import generate_otp, verify_otp
 
 log = logging.getLogger("waypoint")
 logging.basicConfig(level=logging.INFO)
@@ -82,9 +83,47 @@ async def lifespan(app: FastAPI):
     await bus.close()
 
 
-app = FastAPI(title="Waypoint — Disruption Concierge", lifespan=lifespan)
+app = FastAPI(title="Waypoint â€” Disruption Concierge", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
+
+
+
+class OTPRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+
+
+class OTPVerify(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    otp: str = Field(pattern=r"^\d{6}$")
+
+
+@app.post("/api/auth/request-otp")
+def request_otp(body: OTPRequest):
+    email = body.email.strip().lower()
+
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+
+    generate_otp(email)
+    return {
+        "ok": True,
+        "message": "Testing OTP generated. Check the backend terminal."
+    }
+
+
+@app.post("/api/auth/verify-otp")
+def verify_otp_route(body: OTPVerify):
+    email = body.email.strip().lower()
+
+    if verify_otp(email, body.otp):
+        return {
+            "ok": True,
+            "verified": True,
+            "message": "OTP verified successfully"
+        }
+
+    raise HTTPException(status_code=400, detail="Invalid or expired OTP")
 
 @app.get("/api/health")
 def health():
@@ -397,3 +436,6 @@ async def ws(websocket: WebSocket):
             await websocket.receive_text()  # keep-alive; the UI never needs to send
     except WebSocketDisconnect:
         hub.sockets.discard(websocket)
+
+
+

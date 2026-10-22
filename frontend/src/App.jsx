@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { inr } from "./api.js";
 import { useLive } from "./live.js";
 import { useMedia } from "./useMedia.js";
@@ -84,7 +84,7 @@ export default function App() {
             <li key={m.id}>
               <button onClick={() => { setMemberId(m.id); setSheet(null); }} aria-current={m.id === memberId}>
                 <Avatar m={m} />
-                <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
+                <span><b>{m.name}</b><small>{m.budget_level} budget Â· {m.home_city}</small></span>
                 {m.id === memberId && <Icon name="check" size={18} />}
               </button>
             </li>
@@ -114,8 +114,7 @@ export default function App() {
 
   const myTrips = data.trips.filter((t) => t.member.id === memberId);
   const others = data.members.filter((m) => m.id !== memberId);
-
-  return (
+return (
     <UI.Provider value={ctx}>
       <div className={"app " + (desktop ? "desk" : "mob")}>
         {desktop && (
@@ -192,7 +191,7 @@ export default function App() {
             {others.map((m) => (
               <div key={m.id} className="rrow static">
                 <Avatar m={m} />
-                <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
+                <span><b>{m.name}</b><small>{m.budget_level} budget Â· {m.home_city}</small></span>
                 <button className="link" onClick={() => setMemberId(m.id)}>Switch</button>
               </div>
             ))}
@@ -221,3 +220,6 @@ export default function App() {
     </UI.Provider>
   );
 }
+
+
+
