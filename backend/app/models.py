@@ -114,3 +114,54 @@ class Decision(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+class Payment(Base):
+    """One PayPal payment for one prepaid booking. Amounts always come from the booking row."""
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    booking_id: Mapped[str] = mapped_column(String(30))
+    trip_id: Mapped[str] = mapped_column(String(20))
+    member_id: Mapped[str] = mapped_column(String(20))
+    request_key: Mapped[str] = mapped_column(String(40))  # idempotency key for PayPal retries
+    amount_inr: Mapped[float] = mapped_column(Float)
+    amount_usd: Mapped[float] = mapped_column(Float)
+    # CREATED | AUTHORIZED | CAPTURED | VOIDED | REFUNDED
+    status: Mapped[str] = mapped_column(String(20), default="CREATED")
+    order_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    authorization_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    capture_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approve_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class PaymentRefund(Base):
+    """Every time money went back to the member: a refund of a capture, or a released hold."""
+    __tablename__ = "payment_refunds"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_id: Mapped[int] = mapped_column(Integer)
+    booking_id: Mapped[str] = mapped_column(String(30))
+    kind: Mapped[str] = mapped_column(String(10))  # REFUND | VOID
+    amount_inr: Mapped[float] = mapped_column(Float)
+    amount_usd: Mapped[float] = mapped_column(Float)
+    paypal_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class VaultToken(Base):
+    """A member's saved PayPal (consent for auto-rebooking). The token is a secret: it never goes into an API response or a log."""
+    __tablename__ = "vault_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    member_id: Mapped[str] = mapped_column(String(20))
+    vault_id: Mapped[str] = mapped_column(String(80))
+    paypal_customer_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+class VaultSetup(Base):
+    """Remembers which member started a PayPal save, so the return page can't be abused."""
+    __tablename__ = "vault_setups"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    setup_id: Mapped[str] = mapped_column(String(80))
+    member_id: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(12), default="PENDING")  # PENDING | DONE
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

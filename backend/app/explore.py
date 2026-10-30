@@ -108,7 +108,11 @@ def switch(session: Session, booking_id: str, label: str) -> Decision:
         notification=f"You switched to {label} for ₹{chosen['total_cost']:,.0f}.",
         channel=member.alert_channel, latency_ms=0, resolved_at=utcnow(),
     )
-    agent._apply(session, booking, chosen)
+    agent._need_paypal_on_file(session, booking, member.id)
+    new = agent._apply(session, booking, chosen)
+    pay_msg = agent._collect_payment(session, booking, new)
+    if pay_msg:
+        d.notification = f"{d.notification} {pay_msg}".strip()
     if v["allowed"]:
         trip.pool_credit = max(0.0, trip.pool_credit - v["pool_used"])
     session.add(d)

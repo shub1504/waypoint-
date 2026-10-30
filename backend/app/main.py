@@ -9,10 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import agent, cancel, chat, chat_agent, config, explore, guardrail, trips as trips_mod
+from app import agent, cancel, chat, chat_agent, config, explore, guardrail, payments, trips as trips_mod
 from app.bus import make_bus
 from app.db import engine, init_db, session_scope
-from app.models import Booking, Decision, Member, Trip
+from app.models import Booking, Decision, Member, Payment, Trip
+from app.paypal_client import PayPalError
 from app.scenarios import SCENARIOS, build_booking_event, build_event
 from app.seed import create_member, seed
 from app.otp_testing import generate_otp, verify_otp
@@ -57,6 +58,7 @@ def decision_dict(d: Decision) -> dict:
 
 async def on_event(payload: dict) -> None:
     """Called for every event that comes off the bus."""
+    log.info("Event received: %s (%s)", payload.get("event_id"), payload.get("type"))
     await hub.broadcast({"type": "event", "data": payload})
 
     def work():
@@ -64,10 +66,16 @@ async def on_event(payload: dict) -> None:
             d = agent.handle_event(s, payload)
             return decision_dict(d) if d else None
 
-    out = await asyncio.to_thread(work)
-    if out:
-        await hub.broadcast({"type": "decision", "data": out})
-        await hub.broadcast({"type": "trips_changed"})
+    try:
+        out = await asyncio.to_thread(work)
+    except Exception:
+        log.exception("Handling event %s failed", payload.get("event_id"))
+        return
+    if not out:
+        log.info("Event %s produced no decision", payload.get("event_id"))
+        return
+    await hub.broadcast({"type": "decision", "data": out})
+    await hub.broadcast({"type": "trips_changed"})
 
 
 @asynccontextmanager
@@ -83,10 +91,8 @@ async def lifespan(app: FastAPI):
     await bus.close()
 
 
-app = FastAPI(title="Waypoint â€” Disruption Concierge", lifespan=lifespan)
+app = FastAPI(title="Waypoint - Disruption Concierge", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
-
-
 
 
 class OTPRequest(BaseModel):
@@ -124,6 +130,7 @@ def verify_otp_route(body: OTPVerify):
         }
 
     raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+
 
 @app.get("/api/health")
 def health():
@@ -427,6 +434,81 @@ async def chat_reply(body: ChatIn):
         return dict(**chat.reply(s, body.member_id, body.text), actions=[], engine="rules")
 
 
+# ------------------------------------------------------------------ payments (PayPal sandbox)
+def payment_dict(p: Payment) -> dict:
+    return dict(id=p.id, booking_id=p.booking_id, trip_id=p.trip_id, status=p.status,
+                amount_inr=p.amount_inr, amount_usd=p.amount_usd, order_id=p.order_id,
+                approve_url=p.approve_url if p.status == "CREATED" else None)
+
+
+def _pay(fn, *args):
+    """Run one payment step. The real reason goes to the server log, never to the browser."""
+    try:
+        with session_scope() as s:
+            return payment_dict(fn(s, *args))
+    except PayPalError as e:
+        log.warning("PayPal step failed: %s", e)
+        raise HTTPException(400, "Payment could not be completed. Please try again.")
+
+
+class PayStartIn(BaseModel):
+    booking_id: str = Field(min_length=1, max_length=30)
+
+
+class PayOrderIn(BaseModel):
+    order_id: str = Field(min_length=8, max_length=40, pattern=r"^[A-Za-z0-9\-]+$")
+
+
+@app.post("/api/payments/start")
+def pay_start(body: PayStartIn):
+    return _pay(payments.start_payment, body.booking_id)
+
+
+@app.post("/api/payments/authorize-by-order")
+def pay_authorize_by_order(body: PayOrderIn):
+    """The PayPal return page only knows the order id (the token in the URL)."""
+    with session_scope() as s:
+        p = s.scalar(select(Payment).where(Payment.order_id == body.order_id))
+        if p is None:
+            raise HTTPException(404, "Unknown payment")
+        pid = p.id
+    return _pay(payments.authorize, pid)
+
+
+@app.post("/api/payments/{payment_id}/capture")
+def pay_capture(payment_id: int):
+    return _pay(payments.capture, payment_id)
+
+
+@app.get("/api/payments/by-booking/{booking_id}")
+def pay_for_booking(booking_id: str):
+    with session_scope() as s:
+        rows = s.scalars(select(Payment).where(Payment.booking_id == booking_id).order_by(Payment.id)).all()
+        return [payment_dict(p) for p in rows]
+
+@app.post("/api/members/{member_id}/paypal/setup")
+def paypal_setup(member_id: str):
+    try:
+        with session_scope() as s:
+            return payments.start_vault_setup(s, member_id)
+    except PayPalError as e:
+        log.warning("PayPal setup failed: %s", e)
+        raise HTTPException(400, "Could not start PayPal setup. Please try again.")
+
+class PaySetupDoneIn(BaseModel):
+    setup_id: str = Field(min_length=8, max_length=40, pattern=r"^[A-Za-z0-9\-]+$")
+
+
+@app.post("/api/members/{member_id}/paypal/complete")
+def paypal_complete(member_id: str, body: PaySetupDoneIn):
+    try:
+        with session_scope() as s:
+            return payments.complete_vault_setup(s, member_id, body.setup_id)
+    except PayPalError as e:
+        log.warning("PayPal complete failed: %s", e)
+        raise HTTPException(400, "Could not save PayPal. Please try again.")
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     await websocket.accept()
@@ -436,6 +518,3 @@ async def ws(websocket: WebSocket):
             await websocket.receive_text()  # keep-alive; the UI never needs to send
     except WebSocketDisconnect:
         hub.sockets.discard(websocket)
-
-
-

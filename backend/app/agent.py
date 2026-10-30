@@ -8,14 +8,18 @@ is only used afterwards to phrase the message the member reads (see notify.py), 
 mistake can never overspend a card member's money.
 """
 import json
+import logging
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import guardrail, inventory, notify, relevance
+from app import config, guardrail, inventory, notify, payments, relevance
 from app.models import Booking, Decision, DisruptionEvent, Member, Trip, utcnow
+from app.paypal_client import PayPalError
 
+
+log = logging.getLogger("waypoint")
 TRANSPORT_KINDS = {"FLIGHT", "TRAIN", "BUS"}
 
 
@@ -79,6 +83,37 @@ def _apply(session: Session, old: Booking, option: dict) -> Booking:
     session.add(new)
     return new
 
+def _pay_for_rebooking(session: Session, old: Booking, new: Booking) -> str:
+    """Charge the replacement to the member's saved PayPal, then give back the replaced ticket's money."""
+    p = payments.charge_saved(session, new.id)
+    msg = f"₹{new.amount:,.0f} (${p.amount_usd:.2f}) was charged to your saved PayPal."
+    try:
+        r = payments.settle_cancellation(session, old.id, old.amount)
+    except PayPalError as e:
+        log.warning("Refund of replaced booking %s failed: %s", old.id, e)
+        return msg + " The refund for your original ticket is pending."
+    if r and r["kind"] in ("REFUND", "VOID"):
+        msg += f" Original ticket: {r['note']}"
+    return msg
+
+
+def _need_paypal_on_file(session: Session, booking: Booking, member_id: str) -> None:
+    """The member is answering by hand. If the money cannot be collected, stop before anything changes."""
+    if (booking.payment_type == "PREPAID" and config.USE_PAYPAL
+            and not payments.has_saved_paypal(session, member_id)):
+        raise ValueError("Save your PayPal first so Waypoint can pay for this rebooking")
+
+
+def _collect_payment(session: Session, old: Booking, new: Booking) -> str:
+    """Charge the replacement and refund the old ticket. Raising undoes the rebooking."""
+    if old.payment_type != "PREPAID" or not config.USE_PAYPAL:
+        return ""
+    session.flush()
+    try:
+        return _pay_for_rebooking(session, old, new)
+    except PayPalError as e:
+        log.warning("Payment for rebooking %s failed: %s", old.id, e)
+        raise ValueError("The PayPal payment could not be completed, so nothing was changed")
 
 # ---------------------------------------------------------------- candidate builders
 def _transport_options(booking: Booking, sold_out: bool) -> list[dict]:
@@ -143,8 +178,11 @@ def handle_event(session: Session, payload: dict) -> Decision | None:
     trip = session.get(Trip, event.trip_id)
     booking = _active_booking(session, event.booking_id)
     if member is None or trip is None or booking is None or booking.status != "ACTIVE":
+        log.warning("Event %s ignored: member=%s trip=%s booking=%s status=%s",
+                       event.event_id, member is not None, trip is not None,
+                       None if booking is None else booking.id,
+                       None if booking is None else booking.status)
         return None  # unknown, or the member already cancelled it
-
     saved = 0.0
     if event.type != "HOTEL_OVERBOOKED" and event.delay_hours >= 24:
         saved = _release_hotel_night(session, trip)
@@ -199,19 +237,40 @@ def handle_event(session: Session, payload: dict) -> Decision | None:
         best = max(allowed, key=lambda o: o["score"])
         v = best["verdict"]
         auto = booking.payment_type == "PAY_AFTER" or member.consent_autorebook
+        prepaid_auto = auto and booking.payment_type == "PREPAID" and config.USE_PAYPAL
+        if prepaid_auto and not payments.has_saved_paypal(session, member.id):
+            auto = False
+            notes.append("PayPal is not saved for automatic payment, so your approval is needed.")
         notes.append(f"Chose {best['label']}: {v['reason']}.")
         d = _decision(event, member, booking, ceiling,
                       status="AUTO_BOOKED" if auto else "NEEDS_APPROVAL",
                       pool_credit_used=v["pool_used"], reasoning=" ".join(notes),
                       chosen_amount=best["total_cost"], chosen_label=best["label"],
                       chosen_json=json.dumps(best), options_json=json.dumps(_slim(scored)))
+        pay_msg = ""
         if auto:
             session.flush()
-            _apply(session, booking, best)
-            trip.pool_credit = max(0.0, trip.pool_credit - v["pool_used"])
-        return _finish(session, event, member, trip, booking, d)
+            new = _apply(session, booking, best)
+            if prepaid_auto:
+                session.flush()
+                try:
+                    pay_msg = _pay_for_rebooking(session, booking, new)
+                except PayPalError as e:
+                    log.warning("Auto-payment failed for %s: %s", booking.id, e)
+                    booking.status = "ACTIVE"      # undo: keep the original ticket
+                    session.delete(new)
+                    session.flush()
+                    d.status = "NEEDS_APPROVAL"
+                    d.reasoning += " The PayPal payment could not be completed, so nothing was booked and your approval is needed."
+                    auto = False
+            if auto:
+                trip.pool_credit = max(0.0, trip.pool_credit - v["pool_used"])
+        d = _finish(session, event, member, trip, booking, d)
+        if pay_msg:
+            d.notification = f"{d.notification} {pay_msg}".strip()
+        return d
 
-    # ---- everything available is above the limit -> never auto-book, ask the member
+            # ---- everything available is above the limit -> never auto-book, ask the member
     cheapest = min(scored, key=lambda o: o["total_cost"] if booking.kind != "HOTEL" else -o["relevance"] * 1e6 + o["total_cost"])
     notes.append(f"Cheapest suitable option is {cheapest['label']} at {_money(cheapest['total_cost'])}; "
                  f"{cheapest['verdict']['reason']}. Not booked automatically.")
@@ -220,7 +279,6 @@ def handle_event(session: Session, payload: dict) -> Decision | None:
                   chosen_label=cheapest["label"], chosen_json=json.dumps(cheapest),
                   options_json=json.dumps(_slim(scored)))
     return _finish(session, event, member, trip, booking, d)
-
 
 def _score(opts: list[dict], kind: str) -> None:
     prices = [o["total_cost"] for o in opts]
@@ -255,12 +313,15 @@ def approve(session: Session, decision_id: int) -> Decision:
         raise ValueError("Decision is not waiting for approval")
     booking = _active_booking(session, d.booking_id)
     option = json.loads(d.chosen_json)
-    _apply(session, booking, option)
+    _need_paypal_on_file(session, booking, d.member_id)
+    new = _apply(session, booking, option)
+    pay_msg = _collect_payment(session, booking, new)
     trip = session.get(Trip, d.trip_id)
     trip.pool_credit = max(0.0, trip.pool_credit - d.pool_credit_used)
     d.status, d.resolved_at = "USER_APPROVED", utcnow()
+    if pay_msg:
+        d.notification = f"{d.notification} {pay_msg}".strip()
     return d
-
 
 def decline(session: Session, decision_id: int) -> Decision:
     d = session.get(Decision, decision_id)
@@ -277,7 +338,11 @@ def choose(session: Session, decision_id: int, option_index: int) -> Decision:
     options = json.loads(d.options_json)
     option = options[option_index]
     booking = _active_booking(session, d.booking_id)
-    _apply(session, booking, option)
+    _need_paypal_on_file(session, booking, d.member_id)
+    new = _apply(session, booking, option)
+    pay_msg = _collect_payment(session, booking, new)
     d.chosen_amount, d.chosen_label, d.chosen_json = option["total_cost"], option["label"], json.dumps(option)
     d.status, d.resolved_at = "USER_CHOSE", utcnow()
+    if pay_msg:
+        d.notification = f"{d.notification} {pay_msg}".strip()
     return d

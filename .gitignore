@@ -39,3 +39,26 @@ venv/
 !.env.example
 dist/
 frontend/dist/
+
+# secrets
+.env
+*.env
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# local database
+*.db
+*.sqlite3
+
+# frontend
+node_modules/
+dist/
+
+# temp / backup files
+*_backup.py
+check_env.py
+*.log
