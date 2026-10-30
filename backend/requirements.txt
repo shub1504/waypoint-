@@ -1,0 +1,11 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+python-dotenv>=1.0
+azure-eventhub>=5.12
+pyodbc>=5.1            # only needed for Azure SQL (needs "ODBC Driver 18 for SQL Server" installed)
+# Optional, for the Gemini-phrased notifications:
+# langchain-google-genai
+# For tests:
+pytest>=8
+httpx>=0.27

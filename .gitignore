@@ -1,0 +1,64 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+tableau/exports/
+
+# Python virtual environments
+.venv/
+venv/
+
+# Environment and secrets
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Build outputs and caches
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+build/
+.next/
+
+# Local editor and OS files
+.vscode/
+.DS_Store
+
+# Local dependencies and environment
+node_modules/
+frontend/node_modules/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+dist/
+frontend/dist/
+
+# secrets
+.env
+*.env
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# local database
+*.db
+*.sqlite3
+
+# frontend
+node_modules/
+dist/
+
+# temp / backup files
+*_backup.py
+check_env.py
+*.log
