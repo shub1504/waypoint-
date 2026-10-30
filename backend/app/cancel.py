@@ -5,14 +5,17 @@ plan()  : what would happen (shown before the member confirms)
 apply() : do it, record the decision, and return it so the member is notified
 """
 import json
+import logging
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import agent, explore, guardrail, relevance
+from app import agent, explore, guardrail, payments, relevance
 from app.models import Booking, Decision, Member, Trip, utcnow
+from app.paypal_client import PayPalError
 
+log = logging.getLogger("waypoint")
 REASONS = {
     "plans_changed": dict(label="My plans changed",
                           does="Cancels it and applies the normal refund rules."),
@@ -113,8 +116,11 @@ def apply(session: Session, trip_id: str, booking_id: str | None, reason: str, n
         best, opts = _best_swap(session, b)
         ceiling = guardrail.ceiling_for(b.baseline_amount, b.payment_type, member.budget_level)
         saving = b.amount - best["total_cost"]
-        agent._apply(session, b, best)
+        agent._need_paypal_on_file(session, b, member.id)
+        new = agent._apply(session, b, best)
+        pay_msg = agent._collect_payment(session, b, new)
         trip.pool_credit += saving
+        
         d = Decision(
             event_id=f"swap-{uuid.uuid4().hex[:8]}", member_id=member.id, trip_id=trip.id, booking_id=b.id,
             event_type="USER_SWAP", status="USER_CHOSE", kind=b.kind, payment_type=b.payment_type,
@@ -125,15 +131,28 @@ def apply(session: Session, trip_id: str, booking_id: str | None, reason: str, n
             notification=(f"Hi {first}, swapped to {best['label']} for {_money(best['total_cost'])}. "
                           f"You save {_money(saving)}, now in your trip pool for future disruptions."),
             channel=member.alert_channel, latency_ms=0, resolved_at=utcnow())
+        if pay_msg:
+            d.notification = f"{d.notification} {pay_msg}".strip()
         session.add(d); session.flush()
         return d
 
     for b in targets:
         b.status = "CANCELLED"
+    pay_notes = []
+    for i in p["items"]:
+        try:
+            r = payments.settle_cancellation(session, i["booking_id"], i["refund"])
+        except PayPalError as e:
+            log.warning("PayPal settlement failed for %s: %s", i["booking_id"], e)
+            pay_notes.append(f"{i['label']}: the PayPal refund is still pending and will be retried.")
+            continue
+        if r:
+            pay_notes.append(f"{i['label']}: {r['note']}")
     whole = p["scope"] == "trip"
-    detail = dict(p, note=note.strip())
+    detail = dict(p, note=note.strip(), payments=pay_notes)
     reasoning = (f"Reason: {why}. {REASONS[reason]['does']} "
-                 + " ".join(f"{i['label']}: {i['note']}." for i in p["items"]))
+                 + " ".join(f"{i['label']}: {i['note']}." for i in p["items"])
+                 + (" PayPal: " + " ".join(pay_notes) if pay_notes else ""))
     count = len(targets)
     notif = (f"Hi {first}, your trip '{trip.title}' is cancelled ({why})." if whole
              else f"Hi {first}, '{targets[0].label}' is cancelled ({why}).")
