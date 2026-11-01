@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --bg: #e8e1df; --surface: #f6f3f2; --card: #fff; --soft: #eeeae8; --chip: #fff;
   --ink: #141111; --muted: #8b8381; --line: rgba(40, 20, 20, .08); --line2: rgba(40, 20, 20, .26);
   --accent: #d8294f; --accent-ink: #fff; --accent-soft: #fbe4e9;
@@ -619,3 +619,5 @@ button.rrow:hover { box-shadow: 0 0 0 2px var(--accent); }
 .bubble.typing { padding: 14px 18px; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 .quick { padding-top: 10px; }
+
+

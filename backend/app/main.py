@@ -525,3 +525,5 @@ async def ws(websocket: WebSocket):
             await websocket.receive_text()  # keep-alive; the UI never needs to send
     except WebSocketDisconnect:
         hub.sockets.discard(websocket)
+from app.mcp.paypal_router import router as paypal_mcp_router
+app.include_router(paypal_mcp_router)

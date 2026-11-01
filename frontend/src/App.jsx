@@ -153,6 +153,10 @@ export default function App() {
               </button>
             ))}
             <div className="grow" />
+            <button className={"nav " + (tab === "settings" ? "on" : "")} onClick={() => go("settings")} aria-label="Settings">
+              <Icon name="settings" size={24} />
+              <span className="lbl">Settings</span>
+            </button>
             {!rail && (
               <button className="nav" onClick={openDemo} aria-label="Demo controls"><Icon name="flask" size={26} /><span className="lbl">Demo controls</span></button>
             )}
@@ -245,6 +249,12 @@ export default function App() {
     </UI.Provider>
   );
 }
+
+
+
+
+
+
 
 
 
