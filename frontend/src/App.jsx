@@ -1,5 +1,6 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { inr } from "./api.js";
+﻿//App.jsx
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { inr, post } from "./api.js";
 import { useLive } from "./live.js";
 import { useMedia } from "./useMedia.js";
 import { UI } from "./ui.js";
@@ -71,6 +72,30 @@ export default function App() {
     if (screen.current) screen.current.scrollTop = 0;
   }, []);
 
+
+
+  // PayPal sends the member back here after the consent screen
+  const returned = useRef(false);
+  useEffect(() => {
+    if (returned.current) return;
+    const path = window.location.pathname;
+    if (path !== "/payment/vault-success" && path !== "/payment/vault-cancel") return;
+    returned.current = true;
+    const setupId = new URLSearchParams(window.location.search).get("approval_token_id");
+    window.history.replaceState({}, "", "/"); // no PayPal ids left in the address bar
+    go("profile");
+    if (path === "/payment/vault-cancel" || !setupId) {
+      toast("PayPal was not saved. You can try again from Profile.");
+      return;
+    }
+    post(`/api/members/${memberId}/paypal/complete`, { setup_id: setupId })
+      .then(() => {
+        toast("PayPal saved. Waypoint can now rebook within your limit.");
+        window.dispatchEvent(new Event("paypal-saved"));
+      })
+      .catch((e) => toast(e.message));
+  }, [go, toast, memberId]);
+
   const openSheet = useCallback((title, node) => setSheet({ title, node }), []);
   const closeSheet = useCallback(() => setSheet(null), []);
   const me = data.members.find((m) => m.id === memberId);
@@ -114,7 +139,7 @@ export default function App() {
 
   const myTrips = data.trips.filter((t) => t.member.id === memberId);
   const others = data.members.filter((m) => m.id !== memberId);
-return (
+  return (
     <UI.Provider value={ctx}>
       <div className={"app " + (desktop ? "desk" : "mob")}>
         {desktop && (

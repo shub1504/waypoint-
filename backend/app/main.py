@@ -508,6 +508,13 @@ def paypal_complete(member_id: str, body: PaySetupDoneIn):
         log.warning("PayPal complete failed: %s", e)
         raise HTTPException(400, "Could not save PayPal. Please try again.")
 
+@app.get("/api/members/{member_id}/paypal")
+def paypal_status(member_id: str):
+    """Is PayPal saved for this member? Never returns the token itself."""
+    with session_scope() as s:
+        if s.get(Member, member_id) is None:
+            raise HTTPException(404, "Unknown member")
+        return {"saved": payments.has_saved_paypal(s, member_id)}
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
