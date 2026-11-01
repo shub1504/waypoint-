@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KIND_ICON, get, initials, inr, patch, pay } from "../api.js";
+import { KIND_ICON, get, initials, inr, patch, pay, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
 import Matrix, { pairCols, pairRows } from "./Matrix.jsx";
@@ -20,7 +20,7 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 const TITLES = {
   newtrip: "New trip", trips: "My trips",
   new: "New bookings", old: "Old bookings", past: "Past trips",
-  edit: "Edit profile", budget: "Budget comfort", channel: "Alerts via", perms: "Permissions",
+  edit: "Edit profile", budget: "Budget comfort", channel: "Alerts via", perms: "Permissions", payments: "Payments",
 };
 
 export default function Profile() {
@@ -28,11 +28,21 @@ export default function Profile() {
   const me = ui.members.find((m) => m.id === ui.memberId);
   const [page, setPage] = useState(null); // null = the "Me" menu (phone). On a laptop the right pane always shows one.
   const [data, setData] = useState({ new: [], old: [], past_stays: [] });
+  const [paypal, setPaypal] = useState(null); // null = still loading, then true / false
 
   useEffect(() => {
     if (!ui.memberId) return;
-    get(`/api/members/${ui.memberId}/bookings`).then(setData).catch(() => {});
+    get(`/api/members/${ui.memberId}/bookings`).then(setData).catch(() => { });
   }, [ui.memberId, ui.trips]);
+
+  useEffect(() => {
+    if (!ui.memberId) return;
+    const load = () => get(`/api/members/${ui.memberId}/paypal`).then((r) => setPaypal(r.saved)).catch(() => setPaypal(false));
+    setPaypal(null);
+    load();
+    window.addEventListener("paypal-saved", load);
+    return () => window.removeEventListener("paypal-saved", load);
+  }, [ui.memberId]);
 
   if (!me) return null;
   const rebooked = data.new.filter((b) => b.original).length;
@@ -57,6 +67,7 @@ export default function Profile() {
       { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#d8294f" },
       { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#1a1d1b" },
       { id: "perms", icon: "sliders", label: "Permissions", value: `${permsOn} of 2 on`, tint: "#8f5600" },
+      { id: "payments", icon: "wallet", label: "Payments", value: paypal === null ? "…" : paypal ? "Connected" : "Not connected", tint: "#003087" },
     ],
     [
       { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#1a1d1b" },
@@ -128,6 +139,7 @@ export default function Profile() {
       {cur === "budget" && <BudgetPage me={me} />}
       {cur === "channel" && <ChannelPage me={me} />}
       {cur === "perms" && <PermsPage me={me} />}
+      {cur === "payments" && <PaymentsPage me={me} saved={paypal} />}
     </div>
   );
 
@@ -260,6 +272,34 @@ function PermsPage({ me }) {
         title="Auto-rebook within my limit" hint="Off means Waypoint asks before booking anything prepaid." />
       <Toggle on={me.consent_history} onChange={(v) => save({ consent_history: v })}
         title="Learn from my past bookings" hint="Used to pick hotels near where you usually stay." />
+    </div>
+  );
+}
+
+function PaymentsPage({ me, saved }) {
+  const ui = useUI();
+  const [busy, setBusy] = useState(false);
+  const connect = () => {
+    setBusy(true);
+    post(`/api/members/${me.id}/paypal/setup`)
+      .then((r) => {
+        // only ever follow a PayPal link
+        if (!/^https:\/\/www\.(sandbox\.)?paypal\.com\//.test(r.approve_url || "")) throw new Error("Unexpected PayPal link");
+        window.location.href = r.approve_url;
+      })
+      .catch((e) => { setBusy(false); ui.toast(e.message); });
+  };
+  return (
+    <div className="prefs">
+      <p className="sub">
+        {saved
+          ? "Your PayPal is connected. When a flight, train or bus is cancelled, Waypoint can pay for the replacement automatically, but only within your auto-rebook limit. Anything above it waits for your approval."
+          : "Connect PayPal once so Waypoint can pay for a replacement booking within your auto-rebook limit. You approve on PayPal's own page, and Waypoint never sees your PayPal password or card."}
+      </p>
+      <button className="btn primary" onClick={connect} disabled={busy || saved === null}>
+        {busy ? "Opening PayPal…" : saved ? "Connect a different PayPal" : "Save PayPal"}
+      </button>
+      <p className="sub">Demo mode: this uses the PayPal sandbox, so no real money moves.</p>
     </div>
   );
 }
