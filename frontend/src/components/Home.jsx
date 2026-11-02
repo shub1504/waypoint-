@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "motion/react";
 import { EVENT_LABEL, KIND_ICON, STATUS, ago, inr, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
@@ -64,7 +65,7 @@ export default function Home() {
 
       <h1 className="bigtitle">Your trips</h1>
 
-      <div className="hero">
+      <motion.div className="hero" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <div className="hl">
           <b>Committed</b>
           <div className="hnum">{inr(whole)}<em>.{dec}</em>
@@ -77,15 +78,15 @@ export default function Home() {
           <div className="hc"><span>Handled</span><b>{auto + resolved}</b><small>of {mine.length} alerts</small></div>
           <button className="hc dark" onClick={() => ui.go("chat")}><span>Ask Waypoint</span><b>{waiting}</b><small>waiting on you</small><i className="hgo"><Icon name="chevron" size={16} /></i></button>
         </div>
-      </div>
+      </motion.div>
 
       <div className="strip" aria-label="Trips">
         {myTrips.length === 0 && <span className="spill empty">No trips yet</span>}
         {myTrips.map((t) => (
-          <button key={t.id} className="spill" onClick={() => openTrip(t)}>
+          <motion.button key={t.id} className="spill" onClick={() => openTrip(t)} initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.08, duration: 0.3 }}>
             <span className="sic"><Icon name={tripIcon(t)} size={18} /></span>
             <b>{inr(t.spent)}</b><span className="p">{pctOf(t.spent, committed)}%</span>
-          </button>
+          </motion.button>
         ))}
       </div>
 
@@ -189,7 +190,7 @@ function Post({ d, orig }) {
   const ui = useUI();
   const [more, setMore] = useState(false);
   const st = STATUS[d.status] || { label: d.status, tone: "muted" };
-  const route = orig && orig.origin && orig.destination ? `${orig.origin} → ${orig.destination}` : null;
+  const route = orig && orig.origin && orig.destination ? `${orig.origin} â†’ ${orig.destination}` : null;
   const fallback = d.status === "FALLBACK_OPTIONS";
   const cancelled = d.status === "TRIP_CANCELLED" || d.status === "BOOKING_CANCELLED";
   const act = (fn) => fn().catch((e) => ui.toast(e.message));
@@ -224,8 +225,8 @@ function Post({ d, orig }) {
           <div className="mbody"><div className="big">Sold out</div><div className="muted">No tickets from {orig?.origin}. Pick an alternative below.</div></div>
         ) : (
           <div className="mbody">
-            <div className="ba"><small>Before</small><s>{orig ? orig.label.replace(/ \(\d night.*\)/, "") : "—"}</s></div>
-            <div className="ba"><small>{d.status === "NEEDS_APPROVAL" ? "Best option" : "After"}</small><b>{d.chosen_label || "—"}</b></div>
+            <div className="ba"><small>Before</small><s>{orig ? orig.label.replace(/ \(\d night.*\)/, "") : "â€”"}</s></div>
+            <div className="ba"><small>{d.status === "NEEDS_APPROVAL" ? "Best option" : "After"}</small><b>{d.chosen_label || "â€”"}</b></div>
             <div className="price">{inr(d.chosen_amount)}</div>
             <LimitBar d={d} />
           </div>
@@ -264,3 +265,5 @@ function Post({ d, orig }) {
     </article>
   );
 }
+
+

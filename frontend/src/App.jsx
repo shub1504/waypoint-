@@ -1,5 +1,6 @@
-﻿//App.jsx
+//App.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { inr, post } from "./api.js";
 import { useLive } from "./live.js";
 import { useMedia } from "./useMedia.js";
@@ -109,7 +110,7 @@ export default function App() {
             <li key={m.id}>
               <button onClick={() => { setMemberId(m.id); setSheet(null); }} aria-current={m.id === memberId}>
                 <Avatar m={m} />
-                <span><b>{m.name}</b><small>{m.budget_level} budget Â· {m.home_city}</small></span>
+                <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
                 {m.id === memberId && <Icon name="check" size={18} />}
               </button>
             </li>
@@ -172,12 +173,21 @@ export default function App() {
           )}
 
           <main className={"screen" + (tab === "chat" ? " noscroll" : "")} ref={screen}>
-            <div className={"col " + tab}>
-              {tab === "home" && <Home />}
-              {tab === "explore" && <Explore />}
-              {tab === "chat" && <Chat />}
-              {tab === "profile" && <Profile />}
-            </div>
+            <AnimatePresence mode="wait">
+  <motion.div
+    key={tab}
+    className={"col " + tab}
+    initial={{ opacity: 0, y: 16, scale: 0.99 }}
+    animate={{ opacity: 1, y: 0, scale: 1 }}
+    exit={{ opacity: 0, y: -10, scale: 0.99 }}
+    transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+  >
+    {tab === "home" && <Home />}
+    {tab === "explore" && <Explore />}
+    {tab === "chat" && <Chat />}
+    {tab === "profile" && <Profile />}
+  </motion.div>
+</AnimatePresence>
           </main>
 
           {!desktop && (
@@ -216,7 +226,7 @@ export default function App() {
             {others.map((m) => (
               <div key={m.id} className="rrow static">
                 <Avatar m={m} />
-                <span><b>{m.name}</b><small>{m.budget_level} budget Â· {m.home_city}</small></span>
+                <span><b>{m.name}</b><small>{m.budget_level} budget · {m.home_city}</small></span>
                 <button className="link" onClick={() => setMemberId(m.id)}>Switch</button>
               </div>
             ))}
@@ -245,6 +255,8 @@ export default function App() {
     </UI.Provider>
   );
 }
+
+
 
 
 

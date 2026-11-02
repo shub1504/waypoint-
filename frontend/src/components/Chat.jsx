@@ -65,7 +65,12 @@ export default function Chat() {
             </div>
           )
         )}
-        {busy && <div className="bubble bot typing" aria-label="Waypoint is typing"><i /><i /><i /></div>}
+        {busy && (
+  <div className="bubble bot typing" aria-label="Waypoint is typing">
+    <img src="/favicon.svg" alt="Waypoint" className="typing-logo" />
+    <span>Waypoint is thinking...</span>
+  </div>
+)}
         <div ref={end} />
       </div>
 
