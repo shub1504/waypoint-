@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -17,6 +18,9 @@ from app.paypal_client import PayPalError
 from app.scenarios import SCENARIOS, build_booking_event, build_event
 from app.seed import create_member, seed
 from app.otp_testing import generate_otp, verify_otp
+from travel_agent_langgraph_complete.app.api import app as travel_agent_app
+from travel_agent_langgraph_complete.app.graph import shutdown as shutdown_travel_agent
+from travel_agent_langgraph_complete.app.graph import startup as startup_travel_agent
 
 log = logging.getLogger("waypoint")
 logging.basicConfig(level=logging.INFO)
@@ -84,15 +88,46 @@ async def lifespan(app: FastAPI):
     with session_scope() as s:
         if seed(s):
             log.info("Seeded demo data")
+    await startup_travel_agent()
     task = asyncio.create_task(bus.consume(on_event))
     log.info("Event bus: %s | DB: %s", bus.name, engine.dialect.name)
-    yield
-    task.cancel()
-    await bus.close()
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await shutdown_travel_agent()
+        await bus.close()
 
 
 app = FastAPI(title="Waypoint - Disruption Concierge", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+app.mount("/api/travel-agent", travel_agent_app)
+
+
+def _combined_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    travel_schema = travel_agent_app.openapi()
+    for path, path_schema in travel_schema.get("paths", {}).items():
+        schema["paths"][f"/api/travel-agent{path}"] = path_schema
+    components = schema.setdefault("components", {})
+    for component_type, values in travel_schema.get("components", {}).items():
+        components.setdefault(component_type, {}).update(values)
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _combined_openapi
 
 
 class OTPRequest(BaseModel):
