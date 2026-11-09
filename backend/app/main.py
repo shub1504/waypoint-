@@ -1,16 +1,18 @@
-﻿"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
+"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
 import asyncio
+from datetime import datetime
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import agent, cancel, chat, chat_agent, config, explore, guardrail, payments, trips as trips_mod
+from app import agent, cancel, chat, chat_agent, config, explore, guardrail, journey, payments, trips as trips_mod
 from app.bus import make_bus
 from app.db import engine, init_db, session_scope
 from app.models import Booking, Decision, Member, Payment, Trip
@@ -91,7 +93,7 @@ async def lifespan(app: FastAPI):
     with session_scope() as s:
         if seed(s):
             log.info("Seeded demo data")
-        agent_up = False
+    agent_up = False
     if travel_agent_app is not None:
         try:
             await startup_travel_agent()
@@ -108,8 +110,8 @@ async def lifespan(app: FastAPI):
             await task
         except asyncio.CancelledError:
             pass
-            if agent_up:
-                await shutdown_travel_agent()
+        if agent_up:
+            await shutdown_travel_agent()
         await bus.close()
 
 
@@ -247,6 +249,180 @@ async def add_trip(body: TripIn):
             out = dict(id=t.id, title=t.title, envelope=t.envelope)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    await hub.broadcast({"type": "trips_changed"})
+    return out
+
+
+# ------------------------------------------------------------------ start a journey
+STATION_CODE_RE = re.compile(r"^[A-Z]{2,5}$")
+
+
+class JourneyBookIn(BaseModel):
+    member_id: str
+    train_no: str
+    cls: str
+    date: str
+    from_station: str = Field(alias="from")
+    to_station: str = Field(alias="to")
+    budget: float = Field(gt=0)
+    confirm_over_budget: bool = False
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore",
+    }
+
+
+@app.get("/api/journey/stations")
+def journey_stations():
+    return [{"code": code, "name": name} for code, name in journey.STATION_NAMES.items()]
+
+
+@app.get("/api/journey/search")
+def search_journey(
+    from_station: str = Query(..., alias="from"),
+    to_station: str = Query(..., alias="to"),
+    date: str = Query(...),
+    budget: float = Query(...),
+):
+    orig = from_station.strip().upper()
+    dest = to_station.strip().upper()
+    date_str = date.strip()
+
+    if not STATION_CODE_RE.match(orig) or not STATION_CODE_RE.match(dest):
+        raise HTTPException(400, "Station codes must be 2 to 5 letters (e.g. NDLS, UJN)")
+    if orig == dest:
+        raise HTTPException(400, "Origin and destination stations cannot be the same")
+    if budget <= 0:
+        raise HTTPException(400, "Budget must be greater than zero")
+
+    try:
+        journey_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Expected YYYY-MM-DD")
+
+    if journey_date < datetime.now().date():
+        raise HTTPException(400, "Journey date must be today or later")
+
+    return journey.search_journey(orig, dest, date_str, budget)
+
+
+@app.post("/api/journey/book")
+async def book_journey(body: JourneyBookIn):
+    orig = body.from_station.strip().upper()
+    dest = body.to_station.strip().upper()
+    date_str = body.date.strip()
+    train_no = str(body.train_no).strip()
+    cls_name = body.cls.strip().upper()
+
+    if not STATION_CODE_RE.match(orig) or not STATION_CODE_RE.match(dest):
+        raise HTTPException(400, "Station codes must be 2 to 5 letters (e.g. NDLS, UJN)")
+    if orig == dest:
+        raise HTTPException(400, "Origin and destination stations cannot be the same")
+
+    try:
+        journey_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Expected YYYY-MM-DD")
+
+    if journey_date < datetime.now().date():
+        raise HTTPException(400, "Journey date must be today or later")
+
+    if cls_name not in journey.CLASSES:
+        raise HTTPException(400, f"Invalid class '{cls_name}'. Must be one of: {', '.join(journey.CLASSES)}")
+
+    # Deterministic simulation: recompute fare on the server; NEVER trust client-sent fare
+    simulated_trains = journey.simulate_trains(orig, dest, date_str)
+    matched_train = next((t for t in simulated_trains if t["train_no"] == train_no), None)
+    if matched_train is None:
+        raise HTTPException(400, f"Train {train_no} not found for route {orig} to {dest} on {date_str}")
+
+    matched_cls = next((c for c in matched_train["classes"] if c["cls"].upper() == cls_name), None)
+    if matched_cls is None:
+        raise HTTPException(400, f"Class {cls_name} not available on train {train_no}")
+
+    # Waitlisted (WL) classes cannot be booked
+    if matched_cls["availability"].startswith("WL") or not matched_cls.get("available", True):
+        raise HTTPException(400, f"Waitlisted (WL) classes cannot be booked ({matched_cls['availability']})")
+
+    fare = float(matched_cls["fare"])
+
+    # Over-budget check: require explicit confirmation
+    if fare > body.budget and not body.confirm_over_budget:
+        raise HTTPException(409, "This fare is over your budget. Please confirm to continue.")
+
+    orig_name = journey.STATION_NAMES.get(orig, orig)
+    dest_name = journey.STATION_NAMES.get(dest, dest)
+    trip_title = f"{orig_name} to {dest_name} on {date_str}"
+    booking_name = f"{matched_train['name']} ({cls_name}) {date_str}"
+    expected_label = f"{booking_name} {trips_mod._place(orig)}\u2192{trips_mod._place(dest)}"
+
+    try:
+        with session_scope() as s:
+            member = s.get(Member, body.member_id)
+            if member is None:
+                raise HTTPException(400, "Unknown member")
+
+            # Check saved PayPal before creating any record
+            if not payments.has_saved_paypal(s, body.member_id):
+                raise HTTPException(400, "Member has not saved PayPal")
+
+            # Duplicate guard: return 409 if active booking with same label already exists
+            existing = s.scalar(
+                select(Booking.id)
+                .join(Trip, Trip.id == Booking.trip_id)
+                .where(
+                    Trip.member_id == body.member_id,
+                    Booking.kind == "TRAIN",
+                    Booking.status == "ACTIVE",
+                    Booking.label == expected_label,
+                )
+            )
+            if existing:
+                raise HTTPException(409, "You already booked this train")
+
+            trip_data = {
+                "destination": dest,
+                "title": trip_title,
+                "purpose_type": "leisure",
+                "purpose_place": dest_name,
+                "transports": [
+                    {
+                        "kind": "TRAIN",
+                        "origin": orig,
+                        "destination": dest,
+                        "name": booking_name,
+                        "price": fare,
+                    }
+                ],
+                "hotels": [],
+            }
+
+            trip = trips_mod.create_trip(s, body.member_id, trip_data)
+            booking = s.scalar(select(Booking).where(Booking.trip_id == trip.id, Booking.status == "ACTIVE"))
+            if booking is None:
+                raise HTTPException(500, "Failed to create booking")
+
+            # Charge saved PayPal; roll back on failure so no orphaned records exist
+            try:
+                payment = payments.charge_saved(s, booking.id)
+            except PayPalError as e:
+                log.warning("PayPal charge for journey booking %s failed: %s", booking.id, e)
+                s.rollback()
+                raise HTTPException(400, "The PayPal payment could not be completed, so nothing was changed")
+
+            out = {
+                "ok": True,
+                "trip_id": trip.id,
+                "booking_id": booking.id,
+                "amount": booking.amount,
+                "payment_id": payment.id,
+                "payment_status": payment.status,
+                "label": booking.label,
+            }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
     await hub.broadcast({"type": "trips_changed"})
     return out
 

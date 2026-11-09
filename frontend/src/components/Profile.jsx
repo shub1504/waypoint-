@@ -1,9 +1,10 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { KIND_ICON, get, initials, inr, patch, pay, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
 import Matrix, { pairCols, pairRows } from "./Matrix.jsx";
 import NewTrip from "./NewTrip.jsx";
+import StartJourney from "./StartJourney.jsx";
 import CancelSheet from "./CancelSheet.jsx";
 import Avatar from "./Avatar.jsx";
 import Transactions from "./Transactions.jsx";
@@ -19,6 +20,7 @@ const LEVELS = {
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
 const TITLES = {
+  journey: "Start a journey",
   newtrip: "New trip", trips: "My trips",
   new: "New bookings", old: "Old bookings", past: "Past trips", transactions: "Transactions",
   edit: "Edit profile", budget: "Budget comfort", channel: "Alerts via", perms: "Permissions", payments: "Payments",
@@ -60,6 +62,7 @@ export default function Profile() {
   const myTrips = ui.trips.filter((t) => t.member.id === me.id);
   const groups = [
     [
+      { id: "journey", icon: "train", label: "Start a journey", value: "Book a train", tint: "#1a1d1b" },
       { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#1a1d1b" },
       { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#d8294f" },
       { id: "transactions", icon: "table", label: "Transactions", value: String(data.new.length + data.old.length), tint: "#2878a8" },
@@ -135,6 +138,7 @@ export default function Profile() {
       {cur === "new" && <Bookings items={data.new} kind="new" />}
       {cur === "old" && <Bookings items={data.old} kind="old" />}
       {cur === "past" && <Past stays={data.past_stays} />}
+      {cur === "journey" && <StartJourney onDone={() => setPage("trips")} />}
       {cur === "newtrip" && <NewTrip onDone={() => setPage("trips")} />}
       {cur === "trips" && <MyTrips trips={myTrips} />}
       {cur === "transactions" && <Transactions bookings={[...data.new, ...data.old]} />}
