@@ -18,10 +18,13 @@ from app.paypal_client import PayPalError
 from app.scenarios import SCENARIOS, build_booking_event, build_event
 from app.seed import create_member, seed
 from app.otp_testing import generate_otp, verify_otp
-from travel_agent_langgraph_complete.app.api import app as travel_agent_app
-from travel_agent_langgraph_complete.app.graph import shutdown as shutdown_travel_agent
-from travel_agent_langgraph_complete.app.graph import startup as startup_travel_agent
-
+try:
+    from travel_agent_langgraph_complete.app.api import app as travel_agent_app
+    from travel_agent_langgraph_complete.app.graph import shutdown as shutdown_travel_agent
+    from travel_agent_langgraph_complete.app.graph import startup as startup_travel_agent
+except Exception as exc:  # agent packages ya Postgres na ho toh bhi Waypoint chalti rahe
+    travel_agent_app = None
+    logging.getLogger("waypoint").warning("Travel agent disabled: %s", exc)
 log = logging.getLogger("waypoint")
 logging.basicConfig(level=logging.INFO)
 
@@ -88,7 +91,13 @@ async def lifespan(app: FastAPI):
     with session_scope() as s:
         if seed(s):
             log.info("Seeded demo data")
-    await startup_travel_agent()
+        agent_up = False
+    if travel_agent_app is not None:
+        try:
+            await startup_travel_agent()
+            agent_up = True
+        except Exception as exc:  # jaise Postgres chal nahi raha
+            log.warning("Travel agent startup failed, continuing without it: %s", exc)
     task = asyncio.create_task(bus.consume(on_event))
     log.info("Event bus: %s | DB: %s", bus.name, engine.dialect.name)
     try:
@@ -99,13 +108,15 @@ async def lifespan(app: FastAPI):
             await task
         except asyncio.CancelledError:
             pass
-        await shutdown_travel_agent()
+            if agent_up:
+                await shutdown_travel_agent()
         await bus.close()
 
 
 app = FastAPI(title="Waypoint - Disruption Concierge", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
-app.mount("/api/travel-agent", travel_agent_app)
+if travel_agent_app is not None:
+    app.mount("/api/travel-agent", travel_agent_app)
 
 
 def _combined_openapi():
@@ -117,7 +128,7 @@ def _combined_openapi():
         description=app.description,
         routes=app.routes,
     )
-    travel_schema = travel_agent_app.openapi()
+    travel_schema = travel_agent_app.openapi() if travel_agent_app is not None else {}
     for path, path_schema in travel_schema.get("paths", {}).items():
         schema["paths"][f"/api/travel-agent{path}"] = path_schema
     components = schema.setdefault("components", {})
