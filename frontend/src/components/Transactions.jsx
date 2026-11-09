@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AllCommunityModule, themeQuartz } from "ag-grid-community";
 import { AgGridProvider, AgGridReact } from "ag-grid-react";
-import { inr } from "../api.js";
+import { inr, get, post } from "../api.js";
 
 const money = (value) => inr(Number(value || 0));
 
@@ -100,6 +100,10 @@ const fuzzyMatch = (query, value) => {
 export default function Transactions({ bookings = [] }) {
   const [search, setSearch] = useState("");
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [paymentRecords, setPaymentRecords] = useState({});
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [captureBusy, setCaptureBusy] = useState(false);
   const [screenWidth, setScreenWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1200
   );
@@ -110,15 +114,76 @@ export default function Transactions({ bookings = [] }) {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPaymentHistory() {
+      const ids = [...new Set(
+        bookings.map((booking) => booking.id ?? booking.booking_id).filter(Boolean)
+      )];
+
+      if (!ids.length) {
+        setPaymentRecords({});
+        return;
+      }
+
+      setPaymentLoading(true);
+      setPaymentError("");
+
+      const results = await Promise.allSettled(
+        ids.map(async (id) => ({
+          id: String(id),
+          payments: await get(`/api/payments/by-booking/${encodeURIComponent(id)}`),
+        }))
+      );
+
+      if (cancelled) return;
+
+      const next = {};
+      const failures = [];
+
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          next[result.value.id] = Array.isArray(result.value.payments)
+            ? result.value.payments
+            : [];
+        } else {
+          failures.push(ids[index]);
+        }
+      });
+
+      setPaymentRecords(next);
+      setPaymentError(
+        failures.length
+          ? "Some payment records could not be loaded. Please refresh and try again."
+          : ""
+      );
+      setPaymentLoading(false);
+    }
+
+    loadPaymentHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookings]);
+
   const rows = useMemo(
     () =>
-      bookings.map((booking) => ({
-        ...booking,
-        booking_status: statusLabel(booking.status),
-        payment_label: paymentLabel(booking.payment_type),
-        booking_date: dateFormat(booking.created_at),
-      })),
-    [bookings]
+      bookings.map((booking) => {
+        const id = String(booking.id ?? booking.booking_id ?? "");
+        const payments = paymentRecords[id] || [];
+
+        return {
+          ...booking,
+          payments,
+          latest_payment: payments[payments.length - 1] || null,
+          booking_status: statusLabel(booking.status),
+          payment_label: paymentLabel(booking.payment_type),
+          booking_date: dateFormat(booking.created_at),
+        };
+      }),
+    [bookings, paymentRecords]
   );
 
   const filteredRows = useMemo(() => {
@@ -228,6 +293,72 @@ export default function Transactions({ bookings = [] }) {
   ).length;
 
   const closeDetails = () => setSelectedBooking(null);
+
+  const [startBusy, setStartBusy] = useState(false);
+
+  const startPayPalPayment = async () => {
+    if (!selectedBooking || startBusy) return;
+
+    const bookingId = selectedBooking.id ?? selectedBooking.booking_id;
+    if (!bookingId) {
+      setPaymentError("Booking ID is missing.");
+      return;
+    }
+
+    if (selectedBooking.status !== "ACTIVE" || selectedBooking.payment_type !== "PREPAID") {
+      setPaymentError("Only active prepaid bookings can be paid here.");
+      return;
+    }
+
+    setStartBusy(true);
+    setPaymentError("");
+
+    try {
+      const result = await post("/api/payments/start", {
+        booking_id: String(bookingId),
+      });
+
+      if (!/^https:\/\/www\.(sandbox\.)?paypal\.com\//.test(result.approve_url || "")) {
+        throw new Error("PayPal approval link was not returned by the server.");
+      }
+
+      window.location.assign(result.approve_url);
+    } catch (error) {
+      setPaymentError(error.message || "Could not start PayPal payment.");
+      setStartBusy(false);
+    }
+  };
+
+  const captureAuthorizedPayment = async () => {
+    const payment = selectedBooking?.latest_payment;
+    if (!payment || payment.status !== "AUTHORIZED" || captureBusy) return;
+
+    const confirmed = window.confirm(
+      `Confirm capture of ${money(payment.amount_inr)} for this booking?`
+    );
+    if (!confirmed) return;
+
+    setCaptureBusy(true);
+    setPaymentError("");
+
+    try {
+      const updated = await post(`/api/payments/${payment.id}/capture`);
+      const bookingId = String(
+        selectedBooking.id ?? selectedBooking.booking_id
+      );
+
+      setPaymentRecords((current) => ({
+        ...current,
+        [bookingId]: (current[bookingId] || []).map((item) =>
+          item.id === updated.id ? updated : item
+        ),
+      }));
+    } catch (error) {
+      setPaymentError(error.message || "Payment capture failed.");
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
 
   return (
     <div className="transactions">
@@ -448,6 +579,53 @@ export default function Transactions({ bookings = [] }) {
                 <span>Total amount</span>
                 <strong>{money(selectedBooking.amount)}</strong>
               </div>
+
+              <div className="tx-detail-row">
+                <span>Payment status</span>
+                <strong>
+                  {selectedBooking.latest_payment?.status || "No payment record"}
+                </strong>
+              </div>
+
+              {selectedBooking.latest_payment && (
+                <>
+                  <div className="tx-detail-row">
+                    <span>Payment ID</span>
+                    <strong>{selectedBooking.latest_payment.id}</strong>
+                  </div>
+                  <div className="tx-detail-row">
+                    <span>PayPal order</span>
+                    <strong>{selectedBooking.latest_payment.order_id || "?"}</strong>
+                  </div>
+                </>
+              )}
+
+              {selectedBooking.status === "ACTIVE" &&
+                selectedBooking.payment_type === "PREPAID" &&
+                !["CAPTURED", "AUTHORIZED"].includes(selectedBooking.latest_payment?.status) && (
+                  <button
+                    type="button"
+                    className="tx-detail-done"
+                    disabled={startBusy}
+                    onClick={startPayPalPayment}
+                  >
+                    {startBusy ? "Opening PayPal..." : "Pay with PayPal"}
+                  </button>
+                )}
+
+              {selectedBooking.latest_payment?.status === "AUTHORIZED" && (
+                <button
+                  type="button"
+                  className="tx-detail-done"
+                  disabled={captureBusy}
+                  onClick={captureAuthorizedPayment}
+                >
+                  {captureBusy ? "Processing..." : "Confirm and capture payment"}
+                </button>
+              )}
+
+              {paymentLoading && <small>Loading payment history...</small>}
+              {paymentError && <small role="alert">{paymentError}</small>}
             </div>
 
             <button

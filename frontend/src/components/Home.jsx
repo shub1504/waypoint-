@@ -190,7 +190,7 @@ function Post({ d, orig }) {
   const ui = useUI();
   const [more, setMore] = useState(false);
   const st = STATUS[d.status] || { label: d.status, tone: "muted" };
-  const route = orig && orig.origin && orig.destination ? `${orig.origin} â†’ ${orig.destination}` : null;
+  const route = orig && orig.origin && orig.destination ? `${orig.origin} → ${orig.destination}` : null;
   const fallback = d.status === "FALLBACK_OPTIONS";
   const cancelled = d.status === "TRIP_CANCELLED" || d.status === "BOOKING_CANCELLED";
   const act = (fn) => fn().catch((e) => ui.toast(e.message));
@@ -225,8 +225,8 @@ function Post({ d, orig }) {
           <div className="mbody"><div className="big">Sold out</div><div className="muted">No tickets from {orig?.origin}. Pick an alternative below.</div></div>
         ) : (
           <div className="mbody">
-            <div className="ba"><small>Before</small><s>{orig ? orig.label.replace(/ \(\d night.*\)/, "") : "â€”"}</s></div>
-            <div className="ba"><small>{d.status === "NEEDS_APPROVAL" ? "Best option" : "After"}</small><b>{d.chosen_label || "â€”"}</b></div>
+            <div className="ba"><small>Before</small><s>{orig ? orig.label.replace(/ \(\d night.*\)/, "") : "—"}</s></div>
+            <div className="ba"><small>{d.status === "NEEDS_APPROVAL" ? "Best option" : "After"}</small><b>{d.chosen_label || "—"}</b></div>
             <div className="price">{inr(d.chosen_amount)}</div>
             <LimitBar d={d} />
           </div>

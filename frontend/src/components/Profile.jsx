@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { KIND_ICON, get, initials, inr, patch, pay, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
@@ -32,11 +32,16 @@ export default function Profile() {
   const [page, setPage] = useState(null); // null = the "Me" menu (phone). On a laptop the right pane always shows one.
   const [data, setData] = useState({ new: [], old: [], past_stays: [] });
   const [paypal, setPaypal] = useState(null); // null = still loading, then true / false
+  const [rules, setRules] = useState({ prepaid: { low: 1.3, medium: 1.6, high: 2.0 }, pay_after: 2.5, trip_cap: { low: 1.4, medium: 1.7, high: 2.2 } });
 
   useEffect(() => {
     if (!ui.memberId) return;
     get(`/api/members/${ui.memberId}/bookings`).then(setData).catch(() => { });
   }, [ui.memberId, ui.trips]);
+
+  useEffect(() => {
+    get("/api/rules").then(setRules).catch((e) => console.warn("Could not load /api/rules; using fallback values.", e));
+  }, []);
 
   useEffect(() => {
     if (!ui.memberId) return;
@@ -143,7 +148,7 @@ export default function Profile() {
       {cur === "trips" && <MyTrips trips={myTrips} />}
       {cur === "transactions" && <Transactions bookings={[...data.new, ...data.old]} />}
       {cur === "edit" && <EditProfile me={me} />}
-      {cur === "budget" && <BudgetPage me={me} />}
+      {cur === "budget" && <BudgetPage me={me} rules={rules} />}
       {cur === "channel" && <ChannelPage me={me} />}
       {cur === "perms" && <PermsPage me={me} />}
       {cur === "payments" && <PaymentsPage me={me} saved={paypal} />}
@@ -251,7 +256,7 @@ function useSave(me) {
       .catch((e) => ui.toast(e.message));
 }
 
-function BudgetPage({ me }) {
+function BudgetPage({ me, rules }) {
   const save = useSave(me);
   return (
     <div className="prefs">

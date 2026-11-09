@@ -97,6 +97,32 @@ export default function App() {
       .catch((e) => toast(e.message));
   }, [go, toast, memberId]);
 
+  // PayPal checkout return: authorize the approved order (do not capture).
+  const checkoutReturned = useRef(false);
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path !== "/payment/success" && path !== "/payment/cancel") return;
+    if (checkoutReturned.current) return;
+    checkoutReturned.current = true;
+
+    const orderId = new URLSearchParams(window.location.search).get("token");
+    window.history.replaceState({}, "", "/");
+    go("profile");
+
+    if (path === "/payment/cancel" || !orderId) {
+      toast("PayPal checkout was cancelled. No payment was captured.");
+      return;
+    }
+
+    post("/api/payments/authorize-by-order", { order_id: orderId })
+      .then(() => {
+        toast("PayPal payment authorized. The amount is on hold, not captured.");
+        window.dispatchEvent(new Event("payment-updated"));
+      })
+      .catch((e) => toast(e.message || "Payment authorization failed."));
+  }, [go, toast]);
+
+
   const openSheet = useCallback((title, node) => setSheet({ title, node }), []);
   const closeSheet = useCallback(() => setSheet(null), []);
   const me = data.members.find((m) => m.id === memberId);
