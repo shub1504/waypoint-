@@ -1,9 +1,10 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { KIND_ICON, get, initials, inr, patch, pay, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
 import Matrix, { pairCols, pairRows } from "./Matrix.jsx";
 import NewTrip from "./NewTrip.jsx";
+import StartJourney from "./StartJourney.jsx";
 import CancelSheet from "./CancelSheet.jsx";
 import Avatar from "./Avatar.jsx";
 import Transactions from "./Transactions.jsx";
@@ -12,13 +13,14 @@ import { GRADS, fileToAvatar, setColour, setPhoto, useAvatarLook } from "../avat
 const MULT = { low: 1.3, medium: 1.6, high: 2.0 };
 const LEVEL_FILL = { low: 34, medium: 67, high: 100 };
 const LEVELS = {
-  low: "Tighter limits: prepaid rebookings up to 1.3Ã— the original price.",
-  medium: "Balanced: prepaid rebookings up to 1.6Ã— the original price.",
-  high: "Flexible: prepaid rebookings up to 2.0Ã— the original price.",
+  low: "Tighter limits: prepaid rebookings up to 1.3× the original price.",
+  medium: "Balanced: prepaid rebookings up to 1.6× the original price.",
+  high: "Flexible: prepaid rebookings up to 2.0× the original price.",
 };
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
 const TITLES = {
+  journey: "Start a journey",
   newtrip: "New trip", trips: "My trips",
   new: "New bookings", old: "Old bookings", past: "Past trips", transactions: "Transactions",
   edit: "Edit profile", budget: "Budget comfort", channel: "Alerts via", perms: "Permissions", payments: "Payments",
@@ -60,6 +62,7 @@ export default function Profile() {
   const myTrips = ui.trips.filter((t) => t.member.id === me.id);
   const groups = [
     [
+      { id: "journey", icon: "train", label: "Start a journey", value: "Book a train", tint: "#1a1d1b" },
       { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#1a1d1b" },
       { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#d8294f" },
       { id: "transactions", icon: "table", label: "Transactions", value: String(data.new.length + data.old.length), tint: "#2878a8" },
@@ -69,7 +72,7 @@ export default function Profile() {
       { id: "budget", icon: "wallet", label: "Budget comfort", value: cap(me.budget_level), tint: "#d8294f" },
       { id: "channel", icon: "send", label: "Alerts via", value: me.alert_channel, tint: "#1a1d1b" },
       { id: "perms", icon: "sliders", label: "Permissions", value: `${permsOn} of 2 on`, tint: "#8f5600" },
-      { id: "payments", icon: "wallet", label: "Payments", value: paypal === null ? "â€¦" : paypal ? "Connected" : "Not connected", tint: "#003087" },
+      { id: "payments", icon: "wallet", label: "Payments", value: paypal === null ? "…" : paypal ? "Connected" : "Not connected", tint: "#003087" },
     ],
     [
       { id: "switch", icon: "swap", label: "Switch account", value: me.name.split(" ")[0], tint: "#1a1d1b" },
@@ -91,7 +94,7 @@ export default function Profile() {
           <b>{me.name}</b>
           <span className="level" title={LEVELS[me.budget_level]}>
             <span className="lbar" role="img" aria-label={`Budget comfort ${me.budget_level}`}><i style={{ width: LEVEL_FILL[me.budget_level] + "%" }} /></span>
-            <small>{cap(me.budget_level)} Â· {MULT[me.budget_level]}Ã—</small>
+            <small>{cap(me.budget_level)} . {MULT[me.budget_level]}×</small>
           </span>
         </span>
         <Icon name="chevron" size={20} />
@@ -135,9 +138,10 @@ export default function Profile() {
       {cur === "new" && <Bookings items={data.new} kind="new" />}
       {cur === "old" && <Bookings items={data.old} kind="old" />}
       {cur === "past" && <Past stays={data.past_stays} />}
+      {cur === "journey" && <StartJourney onDone={() => setPage("trips")} />}
       {cur === "newtrip" && <NewTrip onDone={() => setPage("trips")} />}
       {cur === "trips" && <MyTrips trips={myTrips} />}
-      {cur === "transactions" && <Transactions bookings={[...data.new, ...data.old]} /> }
+      {cur === "transactions" && <Transactions bookings={[...data.new, ...data.old]} />}
       {cur === "edit" && <EditProfile me={me} />}
       {cur === "budget" && <BudgetPage me={me} />}
       {cur === "channel" && <ChannelPage me={me} />}
@@ -181,11 +185,11 @@ function Bookings({ items, kind }) {
             <span className="bicon"><Icon name={KIND_ICON[b.kind] || "plane"} size={22} /></span>
             <div className="binfo">
               <b>{b.label}</b>
-              <small>{b.trip_title} Â· {pay(b.payment_type)}</small>
+              <small>{b.trip_title} . {pay(b.payment_type)}</small>
               {kind === "old" && b.replaced_by && <small>Replaced by {b.replaced_by.label} ({inr(b.replaced_by.amount)})</small>}
-              {kind === "old" && b.cancelled && <small className="up">Cancelled: {b.cancelled.reason}{b.cancelled.note ? ` (${b.cancelled.note})` : ""} Â· refund {inr(b.cancelled.refund)}</small>}
+              {kind === "old" && b.cancelled && <small className="up">Cancelled: {b.cancelled.reason}{b.cancelled.note ? ` (${b.cancelled.note})` : ""} . refund {inr(b.cancelled.refund)}</small>}
               {kind === "new" && b.original && <small className="up">Rebooked from {b.original.label} ({inr(b.original.amount)})</small>}
-              {kind === "new" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} Â· {inr(b.baseline_amount)} Ã— {b.multiplier}{b.pool_credit > 0 ? ` + ${inr(b.pool_credit)} pool` : ""}</small>}
+              {kind === "new" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} . {inr(b.baseline_amount)} × {b.multiplier}{b.pool_credit > 0 ? ` + ${inr(b.pool_credit)} pool` : ""}</small>}
               {b.decision && <small>Decided by {b.decision.by}{b.decision.latency_ms ? ` in ${b.decision.latency_ms} ms` : ""}</small>}
             </div>
             <div className="bright">
@@ -210,7 +214,7 @@ function Past({ stays }) {
           <div key={s.id} className="ptile">
             <Icon name="bed" size={20} />
             <b>{s.purpose_place}</b>
-            <small>{s.area} Â· {s.distance_km} km</small>
+            <small>{s.area} . {s.distance_km} km</small>
             <small>{inr(s.price_per_night)}/night</small>
             <small className="muted">{s.stayed_on}</small>
           </div>
@@ -252,7 +256,7 @@ function BudgetPage({ me }) {
   return (
     <div className="prefs">
       <Seg label="Budget comfort" value={me.budget_level} options={["low", "medium", "high"]} onChange={(v) => save({ budget_level: v })} />
-      <p className="sub">{LEVELS[me.budget_level]} Pay-after items like hotels get up to 2.5Ã—.</p>
+      <p className="sub">{LEVELS[me.budget_level]} Pay-after items like hotels get up to 2.5×.</p>
     </div>
   );
 }
@@ -300,7 +304,7 @@ function PaymentsPage({ me, saved }) {
           : "Connect PayPal once so Waypoint can pay for a replacement booking within your auto-rebook limit. You approve on PayPal's own page, and Waypoint never sees your PayPal password or card."}
       </p>
       <button className="btn primary" onClick={connect} disabled={busy || saved === null}>
-        {busy ? "Opening PayPalâ€¦" : saved ? "Connect a different PayPal" : "Save PayPal"}
+        {busy ? "Opening PayPal…" : saved ? "Connect a different PayPal" : "Save PayPal"}
       </button>
       <p className="sub">Demo mode: this uses the PayPal sandbox, so no real money moves.</p>
     </div>
@@ -430,12 +434,12 @@ function MyTrips({ trips }) {
         return (
           <li key={t.id} className={"tcard " + (done ? "done" : "")}>
             <div className="thead"><b>{t.title}</b><span className={"chip " + (done ? "muted" : "good")}>{done ? "Cancelled" : "Active"}</span></div>
-            <small>{t.purpose} Â· committed {inr(t.spent)} of {inr(t.envelope)}</small>
+            <small>{t.purpose} . committed {inr(t.spent)} of {inr(t.envelope)}</small>
             <ul className="blist">
               {t.bookings.map((b) => (
                 <li key={b.id} className={b.status !== "ACTIVE" ? "old" : ""}>
                   <Icon name={KIND_ICON[b.kind] || "plane"} size={18} />
-                  <span>{b.label}<small>{BSTATUS[b.status] || b.status}</small>{b.status === "ACTIVE" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} ({inr(b.baseline_amount)} Ã— {b.multiplier})</small>}</span>
+                  <span>{b.label}<small>{BSTATUS[b.status] || b.status}</small>{b.status === "ACTIVE" && b.auto_limit != null && <small className="lim">Auto limit {inr(b.auto_limit)} ({inr(b.baseline_amount)} × {b.multiplier})</small>}</span>
                   {b.status === "ACTIVE"
                     ? <span className="bact"><b>{inr(b.amount)}</b><button className="link warnlink" onClick={() => ui.openSheet("Cancel booking", <CancelSheet trip={t} booking={b} />)}>Cancel</button></span>
                     : <b>{inr(b.amount)}</b>}
