@@ -1,4 +1,4 @@
-"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
+﻿"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
 import asyncio
 from datetime import datetime
 import json
@@ -27,6 +27,7 @@ try:
 except Exception as exc:  # agent packages ya Postgres na ho toh bhi Waypoint chalti rahe
     travel_agent_app = None
     logging.getLogger("waypoint").warning("Travel agent disabled: %s", exc)
+travel_agent_ready = False  # becomes True only if the travel agent really started (the UI reads this from /api/health)
 log = logging.getLogger("waypoint")
 logging.basicConfig(level=logging.INFO)
 
@@ -89,6 +90,7 @@ async def on_event(payload: dict) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global travel_agent_ready
     init_db()
     with session_scope() as s:
         if seed(s):
@@ -98,6 +100,7 @@ async def lifespan(app: FastAPI):
         try:
             await startup_travel_agent()
             agent_up = True
+            travel_agent_ready = True
         except Exception as exc:  # jaise Postgres chal nahi raha
             log.warning("Travel agent startup failed, continuing without it: %s", exc)
     task = asyncio.create_task(bus.consume(on_event))
@@ -183,7 +186,8 @@ def verify_otp_route(body: OTPVerify):
 @app.get("/api/health")
 def health():
     return {"ok": True, "bus": bus.name, "db": engine.dialect.name,
-            "chat": "adk" if chat_agent.available() else "rules"}
+            "chat": "adk" if chat_agent.available() else "rules",
+            "travel_agent": travel_agent_ready}
 
 
 @app.get("/api/rules")
