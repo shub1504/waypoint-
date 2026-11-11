@@ -322,7 +322,7 @@ This is a hackathon build, and these limits are stated honestly:
 
 - Demo sign-in has **no session tokens yet**, so routes trust the user ID sent by the app.
 - No rate limiting on OTP or payment routes.
-- Live train and flight data come from third-party APIs (RailRadar, HasData), not from IRCTC directly. **Fares and seat availability are not real.** Travellers should verify them on IRCTC.
+- Live train and flight data come from third-party APIs (RailRadar, HasData), not from IRCTC directly.
 - Live status was cross-checked against IRCTC and Where Is My Train on sample trains, not on every train.
 - The LangGraph planning agent uses Postgres when configured and an in-memory saver otherwise.
 - Azure Event Hubs and SQL Server are optional adapters. The demo uses the local bus and SQLite.
