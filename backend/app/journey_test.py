@@ -454,6 +454,8 @@ def test_duplicate_booking_guard():
 
 def main():
     init_db()
+    from app import config
+    config.USE_PAYPAL = True
     arg = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
 
     if arg in ("search", "all"):

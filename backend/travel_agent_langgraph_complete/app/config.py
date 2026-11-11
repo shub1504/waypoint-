@@ -2,16 +2,17 @@ import os
 from pathlib import Path
 from dotenv import dotenv_values
 
-_local_env = dotenv_values(Path(__file__).resolve().parents[1] / ".env")
+_backend_env = dotenv_values(Path(__file__).resolve().parents[2] / ".env")
+_local_env = {**_backend_env, **dotenv_values(Path(__file__).resolve().parents[1] / ".env")}
 
-MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-RAILRADAR_API_KEY = os.getenv("RAILRADAR_API_KEY")
-HASDATA_API_KEY = os.getenv("HASDATA_API_KEY")
-HOTEL_API_KEY = os.getenv("HOTEL_API_KEY")
-HOTEL_API_URL = os.getenv("HOTEL_API_URL")
-BOOKING_API_URL = os.getenv("BOOKING_API_URL")
-BOOKING_API_KEY = os.getenv("BOOKING_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME") or os.getenv("GEMINI_MODEL") or _local_env.get("MODEL_NAME") or _local_env.get("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or _local_env.get("GOOGLE_API_KEY") or _local_env.get("GEMINI_API_KEY")
+RAILRADAR_API_KEY = os.getenv("RAILRADAR_API_KEY") or _local_env.get("RAILRADAR_API_KEY") or ""
+HASDATA_API_KEY = os.getenv("HASDATA_API_KEY") or _local_env.get("HASDATA_API_KEY") or ""
+HOTEL_API_KEY = os.getenv("HOTEL_API_KEY") or _local_env.get("HOTEL_API_KEY") or ""
+HOTEL_API_URL = os.getenv("HOTEL_API_URL") or _local_env.get("HOTEL_API_URL") or ""
+BOOKING_API_URL = os.getenv("BOOKING_API_URL") or _local_env.get("BOOKING_API_URL") or ""
+BOOKING_API_KEY = os.getenv("BOOKING_API_KEY") or _local_env.get("BOOKING_API_KEY") or ""
 _configured_database_url = (
     os.getenv("TRAVEL_AGENT_DATABASE_URL")
     or os.getenv("LANGGRAPH_DATABASE_URL")

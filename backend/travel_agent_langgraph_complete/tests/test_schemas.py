@@ -1,4 +1,7 @@
-from app.schemas import IntentResult, TravelPreferences
+try:
+    from travel_agent_langgraph_complete.app.schemas import IntentResult, TravelPreferences
+except ImportError:
+    from app.schemas import IntentResult, TravelPreferences
 
 def test_intent():
     x = IntentResult(is_travel=True, confidence=0.99, reason="trip planning")

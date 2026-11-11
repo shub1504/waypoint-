@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { KIND_ICON, get, initials, inr, patch, pay, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
@@ -67,7 +67,7 @@ export default function Profile() {
   const myTrips = ui.trips.filter((t) => t.member.id === me.id);
   const groups = [
     [
-      { id: "journey", icon: "train", label: "Start a journey", value: "Book a train", tint: "#1a1d1b" },
+      { id: "journey", icon: "train", label: "Start a journey", value: "Live trains & flights", tint: "#1a1d1b" },
       { id: "newtrip", icon: "plus", label: "New trip", value: "Add details", tint: "#1a1d1b" },
       { id: "trips", icon: "pin", label: "My trips", value: String(myTrips.length), tint: "#d8294f" },
       { id: "transactions", icon: "table", label: "Transactions", value: String(data.new.length + data.old.length), tint: "#2878a8" },

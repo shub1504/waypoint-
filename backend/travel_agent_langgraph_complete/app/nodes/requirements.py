@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from ..llm import get_llm, traced_node
 from ..schemas import RequirementResult
 from ..prompts.requirements import REQUIREMENTS_SYSTEM
@@ -11,7 +13,23 @@ async def requirements_node(state):
         f"{getattr(message, 'type', 'message')}: {getattr(message, 'content', message)}"
         for message in state.get("messages", [])
     )
+
+    try:
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    except Exception:
+        now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d (%A)")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d (%A)")
+    day_after_str = (now + timedelta(days=2)).strftime("%Y-%m-%d (%A)")
+    time_ctx = (
+        f"Current reference date in Asia/Kolkata timezone: Today is {today_str}.\n"
+        f"Tomorrow ('kal') is {tomorrow_str}.\n"
+        f"Day after tomorrow ('parso') is {day_after_str}.\n"
+        "Convert relative dates (kal, parso, this Friday, next week) into concrete YYYY-MM-DD dates."
+    )
+
     prompt = (
+        f"{time_ctx}\n"
         f"Existing preferences: {prior}\n"
         f"Conversation history:\n{history}\n"
         f"Latest user message: {state.get('user_message', '')}"

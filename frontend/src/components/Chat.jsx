@@ -1,11 +1,10 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KIND_ICON, STATUS, ago, get, inr, post } from "../api.js";
 import { useUI } from "../ui.js";
 import { Icon } from "./Icons.jsx";
 
 const START = ["How much budget is left?", "What is my auto-rebook limit?", "Why did you pick that?", "Show my bookings"];
 const START_ADK = ["How much budget is left?", "Show cheaper options for my hotel", "Cancel my trip, my plans changed", "Why did you pick that?"];
-const isTravel = (s) => /\b(travel|trip|journey|itinerary|train|flight|airline|hotel|stay|destination|tour|vacation|holiday|ticket|book a|plan a trip|go to|travel to)\b/i.test(s);
 
 function getThreadId(memberId) {
   const key = "waypoint_langgraph_thread_" + memberId;
@@ -75,7 +74,23 @@ export default function Chat() {
   const ui = useUI();
   const me = ui.members.find((m) => m.id === ui.memberId);
   const memberId = String(ui.memberId);
-  const [typed, setTyped] = useState({});
+  const STORAGE_KEY = "waypoint_chat_history";
+
+  const [typed, setTyped] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(typed));
+    } catch {}
+  }, [typed]);
+
   const [suggest, setSuggest] = useState(START);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -181,16 +196,48 @@ export default function Chat() {
     setBusy(true);
     add({ from: "me", text: msg });
     try {
-      if (isTravel(msg)) {
-        await runGraph(msg);
-      } else {
-        const r = await post("/api/chat", { member_id: ui.memberId, text: msg });
+      // 1. If an interrupt is pending in UI, treat this message as resume
+      if (interrupt) {
+        await resumeGraph({ user_message: msg });
+        return;
+      }
+
+      // 2. Collect last 4-6 turns for context
+      const own = typed[memberId] || [];
+      const recentHistory = own.slice(-6).map((m) => ({ from: m.from, text: m.text }));
+
+      // 3. Fast stream response from /api/chat/stream for real-time typing
+      let streamed = "";
+      setProgress("Waypoint is thinking...");
+      await streamAgent("/api/chat/stream", {
+        member_id: ui.memberId,
+        text: msg,
+        thread_id: threadId,
+        history: recentHistory,
+      }, {
+        onToken: (t) => {
+          streamed = t;
+          setProgress("Waypoint is typing...");
+        },
+        onProgress: (p) => setProgress(p),
+        onComplete: (payload, fullTokenText) => {
+          const finalReply = payload.reply || fullTokenText || streamed;
+          add({ from: "bot", text: finalReply, actions: payload.actions || [] });
+          setEngine(payload.engine || "rules");
+          setSuggest(payload.engine === "adk" ? START_ADK : (payload.suggestions || START));
+        }
+      });
+    } catch (e) {
+      // Fallback to standard POST /api/chat if streaming drops
+      try {
+        const own = typed[memberId] || [];
+        const recentHistory = own.slice(-6).map((m) => ({ from: m.from, text: m.text }));
+        const r = await post("/api/chat", { member_id: ui.memberId, text: msg, history: recentHistory });
         add({ from: "bot", text: r.reply, actions: r.actions || [] });
         setEngine(r.engine || "rules");
-        setSuggest(r.engine === "adk" ? START_ADK : (r.suggestions || START));
+      } catch (err2) {
+        add({ from: "bot", text: "Sorry, I couldn't reach the server. " + e.message });
       }
-    } catch (e) {
-      add({ from: "bot", text: "Sorry, I couldn't reach the server. " + e.message });
     } finally {
       setBusy(false);
       setProgress("");
@@ -221,8 +268,26 @@ export default function Chat() {
         <span className="avatar brand lg">W</span>
         <div>
           <b>Waypoint concierge</b>
-          <small><i className="dot on"/> {engine === "langgraph" ? "LangGraph travel agent" : engine === "adk" ? "Gemini · Google ADK agent" : "watching your trips"}</small>
+          <small><i className="dot on"/> {
+            engine === "langgraph" ? "LangGraph travel agent"
+            : engine === "adk" ? "Gemini · Google ADK agent"
+            : engine === "live" ? "Live travel search"
+            : engine === "rules" ? "Waypoint rules engine"
+            : "watching your trips"
+          }</small>
         </div>
+        <button
+          className="btn sm ghost"
+          style={{ marginLeft: "auto", fontSize: "11px", opacity: 0.7 }}
+          onClick={() => {
+            setTyped((prev) => ({ ...prev, [memberId]: [] }));
+            setInterrupt(null);
+            setSelectedIds([]);
+          }}
+          title="Clear conversation history"
+        >
+          Clear chat
+        </button>
       </div>
 
       <div className="msgs" aria-live="polite">

@@ -83,6 +83,14 @@ def test_chat_intents(s):
     run(s, "flight_auto")
     assert "within the ceiling" in chat.reply(s, "M001", "why did you pick that")["reply"]
     assert chat.reply(s, "M001", "hello")["suggestions"]
+    # Free-form mandatory test cases
+    assert "only assist with trips" in chat.reply(s, "M001", "write me a poem")["reply"].lower()
+    assert "12919" in chat.reply(s, "M001", "is 12919 late?")["reply"]
+    assert "train" in chat.reply(s, "M001", "delhi se indore train kal")["reply"].lower()
+    assert "flight" in chat.reply(s, "M001", "cheapest flight DEL to BOM friday")["reply"].lower()
+    assert "flight" in chat.reply(s, "M001", "delhi to mubmai flihgt")["reply"].lower()
+    assert "trip" in chat.reply(s, "M001", "mujhe kahin ghumne jana hai budget 5k")["reply"].lower()
+    assert "trip" in chat.reply(s, "M001", "koi bhi trip suggest karo")["reply"].lower()
 
 
 def test_new_member_gets_starter_trip_and_scenarios_run_on_them(s):

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 # --- Database -------------------------------------------------------------
@@ -15,6 +16,11 @@ load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 #   mssql+pyodbc://USER:PASSWORD@SERVER.database.windows.net:1433/waypoint
 #   ?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
 DATABASE_URL = os.getenv("DATABASE_URL") or "sqlite:///./waypoint.db"
+TRAVEL_AGENT_DATABASE_URL = (
+    os.getenv("TRAVEL_AGENT_DATABASE_URL")
+    or os.getenv("LANGGRAPH_DATABASE_URL")
+    or ""
+)
 
 # --- Azure Event Hubs (real-time bus) ------------------------------------
 EVENTHUB_CONNECTION_STRING = os.getenv("EVENTHUB_CONNECTION_STRING", "")
@@ -22,9 +28,13 @@ EVENTHUB_NAME = os.getenv("EVENTHUB_NAME") or "disruptions"
 EVENTHUB_CONSUMER_GROUP = os.getenv("EVENTHUB_CONSUMER_GROUP", "$Default")
 USE_EVENTHUB = bool(EVENTHUB_CONNECTION_STRING)
 
-# --- Optional LLM (only used to phrase the notification text) -------------
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+# --- LLM & Live Providers -----------------------------------------------
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+GOOGLE_API_KEY = GEMINI_API_KEY
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or os.getenv("MODEL_NAME") or "gemini-3.5-flash-lite"
+RAILRADAR_API_KEY = os.getenv("RAILRADAR_API_KEY", "")
+HASDATA_API_KEY = os.getenv("HASDATA_API_KEY", "")
+USE_LIVE_DATA = os.getenv("USE_LIVE_DATA", "false").lower() in ("true", "1", "yes")
 
 # --- CORS (React dev server) ---------------------------------------------
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
