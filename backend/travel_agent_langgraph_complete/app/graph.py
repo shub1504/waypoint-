@@ -1,5 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.memory import MemorySaver
+import logging
 from .config import DATABASE_URL
 from .state import TravelState
 from .nodes.intent import intent_node
@@ -72,24 +74,42 @@ builder.add_edge("no_results", END)
 
 graph = None
 _checkpointer_context = None
+checkpointer_mode = "none"
 
 async def startup():
-    global graph, _checkpointer_context
+    global graph, _checkpointer_context, checkpointer_mode
     if graph is not None:
         return graph
-    if not DATABASE_URL:
-        raise RuntimeError(
-            "TRAVEL_AGENT_DATABASE_URL must be configured with a PostgreSQL URL."
-        )
-    _checkpointer_context = AsyncPostgresSaver.from_conn_string(DATABASE_URL)
-    checkpointer = await _checkpointer_context.__aenter__()
-    await checkpointer.setup()
+    if DATABASE_URL:
+        try:
+            _checkpointer_context = AsyncPostgresSaver.from_conn_string(DATABASE_URL)
+            checkpointer = await _checkpointer_context.__aenter__()
+            await checkpointer.setup()
+            graph = builder.compile(checkpointer=checkpointer)
+            checkpointer_mode = "postgres"
+            return graph
+        except Exception as exc:
+            import logging
+            logging.getLogger("travel_agent").warning(
+                "PostgreSQL checkpointer startup failed, falling back to memory: %s", exc
+            )
+            if _checkpointer_context is not None:
+                try:
+                    await _checkpointer_context.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                _checkpointer_context = None
+
+    from langgraph.checkpoint.memory import MemorySaver
+    checkpointer = MemorySaver()
     graph = builder.compile(checkpointer=checkpointer)
+    checkpointer_mode = "memory"
     return graph
 
 async def shutdown():
-    global _checkpointer_context, graph
+    global _checkpointer_context, graph, checkpointer_mode
     if _checkpointer_context is not None:
         await _checkpointer_context.__aexit__(None, None, None)
     _checkpointer_context = None
     graph = None
+    checkpointer_mode = "none"

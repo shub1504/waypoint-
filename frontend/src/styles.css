@@ -3006,6 +3006,94 @@ button.rrow:hover { box-shadow: 0 0 0 2px var(--accent); }
   border: 1px solid var(--line);
 }
 
+.jr-live-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  background: #e6f4ea;
+  color: #137333;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  border: 1px solid rgba(19, 115, 51, 0.25);
+}
+
+.jr-mode-switch {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: var(--soft, #f1f3f4);
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+}
+
+.jr-mode-btn {
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.15s ease;
+}
+
+.jr-mode-btn.on {
+  background: var(--card, #ffffff);
+  color: var(--fg, #202124);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+}
+
+.jr-train-stations {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jr-train-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.jr-pill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.jr-pill.live {
+  background: #e6f4ea;
+  color: #137333;
+  font-weight: 600;
+}
+
+.jr-pill.warn {
+  background: #fdebc6;
+  color: #a15c00;
+  font-weight: 600;
+}
+
+.jr-pill.brand {
+  background: #e8f0fe;
+  color: #1a73e8;
+  font-weight: 600;
+}
+
 .jr-search-btn {
   width: 100%;
   margin-top: 10px;
@@ -3212,6 +3300,32 @@ button.rrow:hover { box-shadow: 0 0 0 2px var(--accent); }
 .jr-chip-wl .jr-chip-cls,
 .jr-chip-wl .jr-chip-fare {
   color: var(--muted);
+}
+
+.jr-inline-book-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 11px 14px;
+  background: var(--soft, #f8f9fa);
+  border-radius: 9px;
+  border: 1px solid var(--line, #dadce0);
+  animation: fadeIn 0.18s ease-in-out;
+}
+
+.jr-inline-book-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.jr-inline-book-info b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg, #202124);
 }
 
 .jr-summary-bar {

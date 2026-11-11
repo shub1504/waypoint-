@@ -1,4 +1,4 @@
-﻿"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
+"""FastAPI app: REST for the React UI, a WebSocket for the live feed, and the bus consumer."""
 import asyncio
 from datetime import datetime
 import json
@@ -9,10 +9,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app import agent, cancel, chat, chat_agent, config, explore, guardrail, journey, payments, trips as trips_mod
+from app import agent, cancel, chat, chat_agent, config, explore, guardrail, journey, live_providers, payments, router, trips as trips_mod
 from app.bus import make_bus
 from app.db import engine, init_db, session_scope
 from app.models import Booking, Decision, Member, Payment, Trip
@@ -185,9 +186,16 @@ def verify_otp_route(body: OTPVerify):
 
 @app.get("/api/health")
 def health():
+    ta_status = False
+    if travel_agent_ready:
+        try:
+            from travel_agent_langgraph_complete.app import graph as tagraph
+            ta_status = tagraph.checkpointer_mode or True
+        except Exception:
+            ta_status = True
     return {"ok": True, "bus": bus.name, "db": engine.dialect.name,
             "chat": "adk" if chat_agent.available() else "rules",
-            "travel_agent": travel_agent_ready}
+            "travel_agent": ta_status}
 
 
 @app.get("/api/rules")
@@ -278,8 +286,15 @@ class JourneyBookIn(BaseModel):
 
 
 @app.get("/api/journey/stations")
-def journey_stations():
-    return [{"code": code, "name": name} for code, name in journey.STATION_NAMES.items()]
+def journey_stations(mode: str = Query("train")):
+    if mode == "flight":
+        return [{"code": code, "name": name} for code, name in sorted(journey.AIRPORT_NAMES.items(), key=lambda x: x[1])]
+    return [{"code": code, "name": name} for code, name in sorted(journey.STATION_NAMES.items(), key=lambda x: x[1])]
+
+
+@app.get("/api/journey/airports")
+def journey_airports():
+    return [{"code": code, "name": name} for code, name in sorted(journey.AIRPORT_NAMES.items(), key=lambda x: x[1])]
 
 
 @app.get("/api/journey/search")
@@ -288,6 +303,8 @@ def search_journey(
     to_station: str = Query(..., alias="to"),
     date: str = Query(...),
     budget: float = Query(...),
+    mode: str = Query("train"),
+    limit: int = Query(10),
 ):
     orig = from_station.strip().upper()
     dest = to_station.strip().upper()
@@ -308,7 +325,7 @@ def search_journey(
     if journey_date < datetime.now().date():
         raise HTTPException(400, "Journey date must be today or later")
 
-    return journey.search_journey(orig, dest, date_str, budget)
+    return journey.search_journey(orig, dest, date_str, budget, mode=mode, limit=limit)
 
 
 @app.post("/api/journey/book")
@@ -335,9 +352,9 @@ async def book_journey(body: JourneyBookIn):
     if cls_name not in journey.CLASSES:
         raise HTTPException(400, f"Invalid class '{cls_name}'. Must be one of: {', '.join(journey.CLASSES)}")
 
-    # Deterministic simulation: recompute fare on the server; NEVER trust client-sent fare
-    simulated_trains = journey.simulate_trains(orig, dest, date_str)
-    matched_train = next((t for t in simulated_trains if t["train_no"] == train_no), None)
+    # Verification: recompute fare on the server; NEVER trust client-sent fare
+    trains_for_booking = journey.get_trains_for_booking(orig, dest, date_str)
+    matched_train = next((t for t in trains_for_booking if t["train_no"] == train_no), None)
     if matched_train is None:
         raise HTTPException(400, f"Train {train_no} not found for route {orig} to {dest} on {date_str}")
 
@@ -503,6 +520,7 @@ async def reset():
     with session_scope() as s:
         seed(s, force=True)
     chat_agent.reset_sessions()
+    router.reset_router()
     await hub.broadcast({"type": "reset"})
     return {"ok": True}
 
@@ -559,6 +577,49 @@ class MemberUpdate(BaseModel):
 class ChatIn(BaseModel):
     member_id: str
     text: str
+    history: list[dict] = []
+
+
+class ChatRouteIn(BaseModel):
+    member_id: str
+    text: str
+    thread_id: str | None = None
+    history: list[dict] = []
+
+
+@app.post("/api/chat/route")
+async def chat_route(body: ChatRouteIn):
+    """Fast routing decision: checks thread interrupts, then classifies intent."""
+    if body.thread_id and travel_agent_ready:
+        try:
+            from travel_agent_langgraph_complete.app import graph as tagraph
+            g = await tagraph.startup()
+            snapshot = await g.aget_state({"configurable": {"thread_id": body.thread_id}})
+            if any(task.interrupts for task in snapshot.tasks):
+                return {
+                    "route": "resume_pending",
+                    "origin": None,
+                    "destination": None,
+                    "date": None,
+                    "mode": None,
+                    "reason": "Thread has pending approval",
+                }
+        except Exception as exc:
+            log.debug("Thread interrupt check error: %s", exc)
+
+    prof = None
+    with session_scope() as s:
+        m = s.get(Member, body.member_id)
+        if m:
+            prof = member_dict(m)
+
+    decision = await router.route_chat_message(
+        member_id=body.member_id,
+        text=body.text,
+        member_profile=prof,
+        history=body.history,
+    )
+    return decision.model_dump()
 
 
 class SwitchIn(BaseModel):
@@ -644,20 +705,136 @@ async def booking_switch(booking_id: str, body: SwitchIn):
     return out
 
 
-@app.post("/api/chat")
-async def chat_reply(body: ChatIn):
-    """Google ADK agent (Gemini) when a key is set; the keyword rules otherwise or if the model fails."""
+async def _process_chat_turn(body: ChatIn) -> dict:
     with session_scope() as s:
-        if s.get(Member, body.member_id) is None:
+        m = s.get(Member, body.member_id)
+        if m is None:
             raise HTTPException(404, "Unknown member")
+        member_p = member_dict(m)
+
+    # 1. Fastpath check (<1ms): greetings, suggestion chips, budget, out-of-scope, explicit train status
+    fast = router.is_fastpath(body.text)
+    if fast is not None:
+        with session_scope() as s:
+            res = chat.reply(s, body.member_id, body.text, history=body.history)
+            return dict(
+                reply=res["reply"],
+                actions=[],
+                suggestions=res.get("suggestions", chat.SUGGESTIONS),
+                engine=res.get("engine", "rules"),
+            )
+
+    # 2. Direct travel entities extraction (<5ms): if origin, dest, mode or train number are unambiguous and valid
+    entities = live_providers.extract_travel_entities(body.text)
+    can_fastpath_travel = False
+    if entities.get("train_number"):
+        can_fastpath_travel = True
+    elif entities.get("origin") and entities.get("destination"):
+        if entities.get("mode") == "flight":
+            orig_ok = bool(live_providers.resolve_airport_code(entities["origin"]))
+            dest_ok = bool(live_providers.resolve_airport_code(entities["destination"]))
+        else:
+            orig_ok = bool(live_providers.resolve_station_codes(entities["origin"]))
+            dest_ok = bool(live_providers.resolve_station_codes(entities["destination"]))
+        if orig_ok and dest_ok:
+            can_fastpath_travel = True
+
+    if can_fastpath_travel:
+        with session_scope() as s:
+            res = chat.reply(s, body.member_id, body.text, history=body.history)
+            if res.get("engine") == "live":
+                return dict(
+                    reply=res["reply"],
+                    actions=[],
+                    suggestions=res.get("suggestions", chat.SUGGESTIONS),
+                    engine="live",
+                )
+
+    # 3. Router classification for free-form / Hinglish / typos
+    route_dec = await router.route_chat_message(
+        member_id=body.member_id,
+        text=body.text,
+        member_profile=member_p,
+        history=body.history,
+    )
+
+    # 4. If router classified as live_search: execute directly (Option 2) without 2 extra LLM hops
+    if route_dec.route == "live_search":
+        with session_scope() as s:
+            aug_text = body.text
+            if route_dec.origin and route_dec.destination:
+                aug_text = f"from {route_dec.origin} to {route_dec.destination} {route_dec.mode or 'transport'} {route_dec.date or ''}"
+            res = chat.reply(s, body.member_id, aug_text, history=body.history)
+            return dict(
+                reply=res["reply"],
+                actions=[],
+                suggestions=res.get("suggestions", chat.SUGGESTIONS),
+                engine="live",
+            )
+
+    # 5. Full agent for account reasoning, alternatives, or proposals
     if chat_agent.available():
         try:
-            out = await chat_agent.ask(body.member_id, body.text)
-            return dict(reply=out["reply"], actions=out["actions"], suggestions=chat.SUGGESTIONS, engine="adk")
-        except Exception as e:  # quota, bad key, offline: never leave the member without an answer
-            log.warning("ADK chat failed, using rules: %s", e)
+            out = await chat_agent.ask(body.member_id, body.text, history=body.history)
+            return dict(
+                reply=out["reply"],
+                actions=out.get("actions", []),
+                suggestions=chat.SUGGESTIONS,
+                engine="adk",
+            )
+        except Exception as e:
+            log.warning("Agent chat failed, using rules fallback: %s", e)
+
     with session_scope() as s:
-        return dict(**chat.reply(s, body.member_id, body.text), actions=[], engine="rules")
+        res = chat.reply(s, body.member_id, body.text, history=body.history)
+        return dict(
+            reply=res["reply"],
+            actions=[],
+            suggestions=res.get("suggestions", chat.SUGGESTIONS),
+            engine=res.get("engine", "rules"),
+        )
+
+
+@app.post("/api/chat")
+async def chat_reply(body: ChatIn):
+    """Direct fast-path chat response."""
+    return await _process_chat_turn(body)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(body: ChatIn):
+    """Server-Sent Events streaming chat response for real-time typing UI."""
+    async def event_generator():
+        yield 'event: progress\ndata: {"name": "Waypoint is thinking..."}\n\n'
+        try:
+            out = await _process_chat_turn(body)
+            reply = out.get("reply", "")
+            actions = out.get("actions", [])
+            engine = out.get("engine", "rules")
+            suggestions = out.get("suggestions", chat.SUGGESTIONS)
+
+            # Smooth token streaming for typing effect
+            words = reply.split(" ")
+            chunk_size = max(1, min(4, len(words) // 25 or 1))
+            for i in range(0, len(words), chunk_size):
+                chunk = " ".join(words[i:i + chunk_size])
+                if i + chunk_size < len(words):
+                    chunk += " "
+                yield f'event: token\ndata: {{"content": {json.dumps(chunk)}}}\n\n'
+                await asyncio.sleep(0.012)
+
+            complete_payload = {
+                "reply": reply,
+                "actions": actions,
+                "engine": engine,
+                "suggestions": suggestions,
+            }
+            yield f'event: complete\ndata: {json.dumps(complete_payload)}\n\n'
+        except Exception as e:
+            log.exception("Error in chat stream: %s", e)
+            yield f'event: error\ndata: {{"message": {json.dumps(str(e))}}}\n\n'
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # ------------------------------------------------------------------ payments (PayPal sandbox)
